@@ -89,7 +89,7 @@ The team's MySQL database is hosted on AWS RDS. Ask the team for the RDS endpoin
 ```bash
 cd backend
 python -m venv venv
-venv\Scriptsctivate           # Windows  (Mac: source venv/bin/activate)
+venv\Scripts\activate           # Windows  (Mac: source venv/bin/activate)
 pip install -r requirements.txt
 copy .env.development.example .env.development   # Mac: cp ...  then fill in the RDS details
 python api.py
