@@ -1,0 +1,9 @@
+<!-- Messages Partial Template -->
+<div class="container">
+    <% if (typeof message != 'undefined' && message) { %>
+    <div class="alert alert-primary alert-dismissible">
+        <span class="close" onclick="this.parentElement.style.display='none';">&times;</span>
+        <%= message %>
+    </div>
+    <% } %>
+</div>

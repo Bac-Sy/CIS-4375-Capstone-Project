@@ -1,0 +1,10 @@
+/* Custom styles for the whole site. Bootstrap loads before this file, so rules here override it. */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+main {
+    flex: 1;
+    padding: 2rem 0;
+}

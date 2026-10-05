@@ -1,5 +1,5 @@
 {
-  "name": "capstone-frontend",
+  "name": "cis-4375-capstone",
   "version": "1.0.0",
   "private": true,
   "main": "server.js",
@@ -9,9 +9,11 @@
     "start": "cross-env NODE_ENV=production node server.js"
   },
   "dependencies": {
+    "axios": "^1.12.0",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
-    "express": "^4.21.0"
+    "express": "^5.1.0",
+    "express-session": "^1.18.1"
   },
   "devDependencies": {
     "cross-env": "^7.0.3"
