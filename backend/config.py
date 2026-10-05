@@ -6,9 +6,9 @@ APP_ENV = os.getenv("APP_ENV", "development")
 load_dotenv(f".env.{APP_ENV}")
 
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
+    "host": os.getenv("DB_HOST"),
     "port": int(os.getenv("DB_PORT", "3306")),
-    "user": os.getenv("DB_USER", "root"),
+    "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD", ""),
     "database": os.getenv("DB_NAME", "capstone_dev"),
 }

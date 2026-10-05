@@ -1,11 +1,10 @@
 # CIS-4375-Capstone-Project
 
-**Stack:** MySQL database → Flask API (`backend/`) → Node/Express server rendering EJS views (`frontend/`)
+**Stack:** MySQL on AWS RDS (managed in MySQL Workbench) → Flask API (`backend/`) → Node/Express server rendering EJS views (`frontend/`)
 
 ```
 backend/     Flask API (Python)
 frontend/    Express server + EJS views (Node)
-database/    MySQL schema / SQL scripts
 ```
 
 ## Environments & branches
@@ -17,7 +16,7 @@ database/    MySQL schema / SQL scripts
 | `dev`     | development | Everyone's work combined                  |
 | `<name>`  | (local)     | Your personal branch, e.g. `bianca`       |
 
-Each environment has its own database (`capstone_dev`, `capstone_test`, `capstone_prod`) and its own env files.
+Each environment has its own env files. Database connection details (AWS RDS endpoint, user, password) go in those files, never in GitHub.
 
 ## Team workflow
 
@@ -63,10 +62,7 @@ Then open a pull request on GitHub: **base: `dev` ← compare: `yourname`**. Amr
 ## Running locally
 
 ### Database
-Install MySQL, then:
-```bash
-mysql -u root -p < database/schema.sql
-```
+The team's MySQL database is hosted on AWS RDS. Ask the team for the RDS endpoint, username, and password, and put them in your backend `.env` file (see below).
 
 ### Backend (Flask API, port 5000)
 ```bash
@@ -74,7 +70,7 @@ cd backend
 python -m venv venv
 venv\Scripts\activate           # Windows  (Mac: source venv/bin/activate)
 pip install -r requirements.txt
-copy .env.development.example .env.development   # Mac: cp ...  then fill in DB_PASSWORD
+copy .env.development.example .env.development   # Mac: cp ...  then fill in the RDS details
 python app.py
 ```
 Use `APP_ENV=test` or `APP_ENV=production` to switch environments.
