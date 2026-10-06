@@ -1,5 +1,5 @@
 -- Space City Couture inventory system
--- Built from: ERD - Bianca's Final Changes (location lookup table, employee password)
+-- Matches: ERD - Bianca's Final Changes (location lookup table, employee password)
 -- Run the whole file with the plain lightning bolt.
 
 USE Capstone_Project;
@@ -43,7 +43,7 @@ CREATE TABLE Employee (
     First_Name    VARCHAR(50) NOT NULL,
     Last_Name     VARCHAR(50) NOT NULL,
     Role          VARCHAR(50) NOT NULL,
-    Password      VARCHAR(255) NOT NULL   -- store a hash, never plain text
+    Password      VARCHAR(255) NOT NULL
 );
 
 -- ---------- Child tables (have foreign keys) ----------
@@ -63,13 +63,12 @@ CREATE TABLE Product_Variant (
     Size_ID       INT NOT NULL,
     Color_ID      INT NOT NULL,
     Product_ID    INT NOT NULL,
-    Location_ID   INT NOT NULL,           -- ERD says str; must be INT to match Location
+    Location_ID   VARCHAR(20) NOT NULL,   -- str per ERD (no FK: MySQL can't link str to int)
     Price         DECIMAL(10,2) NOT NULL CHECK (Price >= 0),
-    Cost          DECIMAL(10,2) NOT NULL CHECK (Cost >= 0),  -- ERD says int; money needs decimals
+    Cost          INT NOT NULL CHECK (Cost >= 0),
     FOREIGN KEY (Size_ID)     REFERENCES Size(Size_ID),
     FOREIGN KEY (Color_ID)    REFERENCES Color(Color_ID),
-    FOREIGN KEY (Product_ID)  REFERENCES Product(Product_ID),
-    FOREIGN KEY (Location_ID) REFERENCES Location(Location_ID)
+    FOREIGN KEY (Product_ID)  REFERENCES Product(Product_ID)
 );
 
 CREATE TABLE Inventory (
@@ -81,12 +80,11 @@ CREATE TABLE Inventory (
 
 CREATE TABLE Invoice (
     Invoice_ID          INT AUTO_INCREMENT PRIMARY KEY,
-    Transaction_Type_ID INT NOT NULL,     -- ERD draws the link but doesn't label it FK
+    Transaction_Type_ID INT NOT NULL,
     Quantity_Change     INT NOT NULL,     -- negative for sales/removals
     Date                DATE NOT NULL,
     Variant_ID          INT NOT NULL,
     Employee_ID         INT NOT NULL,
-    FOREIGN KEY (Transaction_Type_ID) REFERENCES Transaction_Type(Transaction_Type_ID),
     FOREIGN KEY (Variant_ID)          REFERENCES Product_Variant(Variant_ID),
     FOREIGN KEY (Employee_ID)         REFERENCES Employee(Employee_ID)
 );

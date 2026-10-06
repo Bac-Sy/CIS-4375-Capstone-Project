@@ -12,7 +12,7 @@ INSERT INTO Transaction_Type (Transaction_Type) VALUES ('Restock'), ('Sale');
 INSERT INTO Employee (First_Name, Last_Name, Role, Password) VALUES ('Test', 'User', 'Manager', 'placeholder_hash');
 
 INSERT INTO Product (Name, Category_ID, Availability, Supplier_ID) VALUES ('Satin Midi Dress', 1, TRUE, 1);
-INSERT INTO Product_Variant (Size_ID, Color_ID, Product_ID, Location_ID, Price, Cost) VALUES (2, 1, 1, 1, 79.99, 32.50);
+INSERT INTO Product_Variant (Size_ID, Color_ID, Product_ID, Location_ID, Price, Cost) VALUES (2, 1, 1, '1', 79.99, 32);
 INSERT INTO Inventory (Quantity, Variant_ID) VALUES (10, 1);
 INSERT INTO Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) VALUES (1, 10, '2026-10-06', 1, 1);
 
