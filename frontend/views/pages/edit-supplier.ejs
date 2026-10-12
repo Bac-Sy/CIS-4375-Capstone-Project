@@ -10,7 +10,9 @@
             <div class="container" style="max-width: 600px;">
                 <h2 class="mb-4">Edit supplier #<%= supplier.Supplier_ID %></h2>
 
-                <form action="/suppliers/<%= supplier.Supplier_ID %>/edit" method="POST">
+                <form action="/suppliers/<%= supplier.Supplier_ID %>/edit" method="POST"
+                      data-confirm="Save changes to <%= supplier.Name %>?"
+                      data-confirm-button="Save changes">
                     <div class="mb-3">
                         <label for="Name" class="form-label">Name</label>
                         <input type="text" class="form-control" id="Name" name="Name"
@@ -36,5 +38,6 @@
         </main>
         <%- include('../template/footer'); %>
         <%- include('../template/scripts'); %>
+        <%- include('../template/confirm'); %>
     </body>
 </html>
