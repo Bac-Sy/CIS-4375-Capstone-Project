@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from sql import execute_read_query, execute_update_query, create_connection 
+from sql import execute_read_query, execute_update_query, DBconnection
 import creds 
 
 app = Flask(__name__)
@@ -7,7 +7,7 @@ app = Flask(__name__)
 # --- DATABASE CONNECTION ---
 def get_db_connection():
     mycreds = creds.mycreds()
-    return create_connection(mycreds.hostname, mycreds.username, mycreds.password, mycreds.database)
+    return DBconnection(mycreds.hostname, mycreds.username, mycreds.password, mycreds.database)
 
 
 # ==========================================

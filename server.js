@@ -38,6 +38,38 @@ app.get('/', (req, res) => {
 });
 
 
+//EDIT SUPPLIER: load the supplier and show the form with current values filled in
+app.get('/suppliers/:id/edit', (req, res) => {
+    axios.get(`${API_URL}/api/suppliers`)
+        .then((response) => {
+            const supplier = response.data.find(s => s.Supplier_ID == req.params.id);
+            if (!supplier) {
+                return res.render('index', { message: `No supplier found with ID ${req.params.id}.` });
+            }
+            res.render('edit-supplier', { supplier: supplier });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not load the supplier. Make sure backend/api.py is running.' });
+        });
+});
+
+//EDIT SUPPLIER: send the changes to the flask API
+app.post('/suppliers/:id/edit', (req, res) => {
+    const updated = {
+        Name: req.body.Name,
+        Email: req.body.Email || null,     //blank becomes null so the UNIQUE email rule doesn't trip
+        Phone: req.body.Phone || null
+    };
+    axios.put(`${API_URL}/api/suppliers/${req.params.id}`, updated)
+        .then(() => {
+            res.render('index', { message: `Supplier ${req.params.id} updated.` });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
+
+
 //run application on a port
 app.listen(PORT);
 console.log(`Application (${env}) is listening on port ${PORT}`);
