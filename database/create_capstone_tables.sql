@@ -87,6 +87,9 @@ CREATE TABLE Invoice (
     Date                DATE NOT NULL,
     Variant_ID          INT NOT NULL,
     Employee_ID         INT NOT NULL,
+    -- Transaction_Type_ID FK was missing from the original script and is not yet on the live RDS table.
+    -- To add it there: ALTER TABLE Invoice ADD FOREIGN KEY (Transaction_Type_ID) REFERENCES Transaction_Type(Transaction_Type_ID);
+    FOREIGN KEY (Transaction_Type_ID) REFERENCES Transaction_Type(Transaction_Type_ID),
     FOREIGN KEY (Variant_ID)          REFERENCES Product_Variant(Variant_ID),
     FOREIGN KEY (Employee_ID)         REFERENCES Employee(Employee_ID)
 );
