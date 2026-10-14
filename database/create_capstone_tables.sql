@@ -43,7 +43,9 @@ CREATE TABLE Employee (
     First_Name    VARCHAR(50) NOT NULL,
     Last_Name     VARCHAR(50) NOT NULL,
     Role          VARCHAR(50) NOT NULL,
-    Password      VARCHAR(255) NOT NULL
+    Password_Hash VARCHAR(255) NOT NULL,
+    Username      VARCHAR(50)  NOT NULL UNIQUE,
+    Email         VARCHAR(100) NOT NULL UNIQUE
 );
 
 -- ---------- Child tables (have foreign keys) ----------

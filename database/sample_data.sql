@@ -9,7 +9,8 @@ INSERT INTO Color (Color) VALUES ('Black'), ('Red');
 INSERT INTO Size (Size) VALUES ('S'), ('M');
 INSERT INTO Location (Location_Name) VALUES ('Main Store'), ('Warehouse');
 INSERT INTO Transaction_Type (Transaction_Type) VALUES ('Restock'), ('Sale');
-INSERT INTO Employee (First_Name, Last_Name, Role, Password) VALUES ('Test', 'User', 'Manager', 'placeholder_hash');
+-- Test login: username testuser, password test123 (argon2 hash below)
+INSERT INTO Employee (First_Name, Last_Name, Role, Password_Hash, Username, Email) VALUES ('Test', 'User', 'Manager', '$argon2id$v=19$m=65536,t=3,p=4$7CKN5pbACvfyaCjDZJzx9A$gbWBAzObGt+KgikXTgWYXDfg+XLyuxXZrzSpWcLxof4', 'testuser', 'test@example.com');
 
 INSERT INTO Product (Name, Category_ID, Availability, Supplier_ID) VALUES ('Satin Midi Dress', 1, TRUE, 1);
 INSERT INTO Product_Variant (Size_ID, Color_ID, Product_ID, Location_ID, Price, Cost) VALUES (2, 1, 1, '1', 79.99, 32);
