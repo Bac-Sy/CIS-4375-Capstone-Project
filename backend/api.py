@@ -50,7 +50,7 @@ def db_check():
 @app.route('/all/employees', methods = ['GET'])
 def allEmployees():
     mycon = get_connection()
-    sql = "select Employee_ID First_Name, Last_Name, Role, Email, Username from Employee"
+    sql = "select Employee_ID, First_Name, Last_Name, Role, Email, Username from Employee"
     allEmployees = execute_read_query(mycon, sql)
     mycon.close()
     return jsonify(allEmployees)
@@ -67,7 +67,7 @@ def employeeInformation():
     if (employeeInformation):
         return jsonify (employeeInformation)
     else:
-        return jsonify({"message": "No employee found"})
+        return jsonify({"message": "No employee found"}), 404
 
 
 #Create (Add a new employee to the database)
@@ -92,10 +92,10 @@ def addEmployee():
         #check to make sure the email and username are unique to the DB
         if storedEmail:
             mycon.close()
-            return jsonify({'message' : 'An account with this email already exists. Try a different email address.'})
+            return jsonify({'message' : 'An account with this email already exists. Try a different email address.'}), 409
         elif storedUsername:
             mycon.close()
-            return jsonify ({'message': 'An account with that username already exists. Try a different username.'})
+            return jsonify ({'message': 'An account with that username already exists. Try a different username.'}), 409
         else: 
             #password hashing below
             ph = PasswordHasher()
@@ -104,7 +104,7 @@ def addEmployee():
             sql = "insert into Employee (First_Name, Last_Name, Role, Username, Email, Password_Hash) Values ('%s','%s','%s','%s','%s','%s')" % (firstName, lastName, role, username, email,hashedPassword )
             execute_update_query(mycon,sql)
             mycon.close()
-            return jsonify({'message': 'Employee successfully added to the system.'})
+            return jsonify({'message': 'Employee successfully added to the system.'}), 201
 
 #Update
 @app.route('/update/employee', methods=['PUT'])
@@ -161,19 +161,20 @@ def deleteEmployee():
     mycon.close()
     return jsonify({'message' : 'Employee deleted from the system.'})
 # Below is the API for the login system
-@app.route('/login', methods=['GET,POST'])
+@app.route('/login', methods=['POST'])
 def login():
-    mycon = get_connection
+    mycon = get_connection()
     userinput = request.get_json()
-    email = userinput['Email']
-    password = ['Password']
+    username = userinput['Username']
+    password = userinput['Password']
 
-    sql = "select Email, Password_Hash, First_Name, Last_Name, Role, Username from Employee where Email = '%s'"
+    #This part verifies that the username is in the system. If it is, it pulls the other value's in the Employee table that belong to that user 
+    sql = "select Email, Password_Hash, First_Name, Last_Name, Role, Username from Employee where Username = '%s'" % (username)
     results = execute_read_query(mycon,sql)
-
+    mycon.close()
     if not results:
-        return jsonify({'message' : 'User not found, try again'})
-
+        return jsonify({'message' : 'Username not found, try again'}), 404
+    #These stored values can be used in the node server for session management. 
     storedEmail = results[0]['Email']
     storedPasswordHash = results[0]['Password_Hash']
     storedFirstName = results[0]['First_Name']
@@ -183,6 +184,7 @@ def login():
 
     ph = PasswordHasher()
 
+# The funtion verifies if the password matches the hash. The username and password combination must match, or the login fails.
     try:
         if (ph.verify(storedPasswordHash, password)):
             return jsonify({
@@ -193,9 +195,11 @@ def login():
                     "Role" : storedRole,
                     "Username" : storedUsername
             }), 200
-        else:
-            return
         
+    except exceptions.VerificationError: 
+        return jsonify({'message':'Invalid password.' }), 401
+    except Exception as e:
+        return jsonify({'message' : 'An error occurred'}), 500
 
 #Below is the CRUD for the Invoice table.
 
