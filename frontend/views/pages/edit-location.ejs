@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Edit location' }); %>
+</head>
+
+<body>
+<%- include('../template/nav'); %>
+<main>
+<div class="container" style="max-width: 600px;">
+<h2 class="mb-4">Edit location #<%= location.Location_ID %></h2>
+
+<form action="/locations/<%= location.Location_ID %>/edit" method="POST"
+data-confirm="Save changes to <%= location.Location_Name %>?"
+data-confirm-button="Save changes">
+<div class="mb-3">
+<label for="Location_Name" class="form-label">Location name</label>
+<input type="text" class="form-control" id="Location_Name" name="Location_Name"
+value="<%= location.Location_Name %>" required>
+</div>
+
+<button type="submit" class="btn btn-primary">Save changes</button>
+<a href="/" class="btn btn-outline-secondary">Cancel</a>
+</form>
+</div>
+</main>
+<%- include('../template/footer'); %>
+<%- include('../template/scripts'); %>
+<%- include('../template/confirm'); %>
+</body>
+</html>

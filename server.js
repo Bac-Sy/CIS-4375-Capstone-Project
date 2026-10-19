@@ -69,6 +69,7 @@ app.post('/suppliers/:id/edit', (req, res) => {
         });
 });
 
+
 //EDIT CATEGORY: load the category and show the form with current values filled in
 app.get('/categories/:id/edit', (req, res) => {
     axios.get(`${API_URL}/api/categories`)
@@ -97,6 +98,38 @@ app.post('/categories/:id/edit', (req, res) => {
             res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
         });
 });
+
+
+//EDIT LOCATION: load the location and show the form with current values filled in
+app.get('/locations/:id/edit', (req, res) => {
+    axios.get(`${API_URL}/api/locations`)
+        .then((response) => {
+            const location = response.data.find(l => l.Location_ID == req.params.id);
+            if (!location) {
+                return res.render('index', { message: `No location found with ID ${req.params.id}.` });
+            }
+            res.render('edit-location', { location: location });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not load the location. Make sure backend/api.py is running.' });
+        });
+});
+
+//EDIT LOCATION: send the changes to the flask API
+app.post('/locations/:id/edit', (req, res) => {
+    const updated = {
+        Location_Name: req.body.Location_Name
+    };
+    axios.put(`${API_URL}/api/locations/${req.params.id}`, updated)
+        .then(() => {
+            res.render('index', { message: `Location ${req.params.id} updated.` });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
+
+
 //run application on a port
 app.listen(PORT);
 console.log(`Application (${env}) is listening on port ${PORT}`);
