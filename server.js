@@ -130,6 +130,47 @@ app.post('/locations/:id/edit', (req, res) => {
 });
 
 
+//EDIT PRODUCT: load the product plus the category and supplier lists for the dropdowns
+app.get('/products/:id/edit', (req, res) => {
+    Promise.all([
+        axios.get(`${API_URL}/api/products`),
+        axios.get(`${API_URL}/api/categories`),
+        axios.get(`${API_URL}/api/suppliers`)
+    ])
+        .then(([productRes, categoryRes, supplierRes]) => {
+            const product = productRes.data.find(p => p.Product_ID == req.params.id);
+            if (!product) {
+                return res.render('index', { message: `No product found with ID ${req.params.id}.` });
+            }
+            res.render('edit-product', {
+                product: product,
+                categories: categoryRes.data,
+                suppliers: supplierRes.data
+            });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not load the product. Make sure backend/api.py is running.' });
+        });
+});
+
+//EDIT PRODUCT: send the changes to the flask API
+app.post('/products/:id/edit', (req, res) => {
+    const updated = {
+        Name: req.body.Name,
+        Category_ID: req.body.Category_ID,
+        Availability: req.body.Availability,     //1 = available, 0 = not available
+        Supplier_ID: req.body.Supplier_ID
+    };
+    axios.put(`${API_URL}/api/products/${req.params.id}`, updated)
+        .then(() => {
+            res.render('index', { message: `Product ${req.params.id} updated.` });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
+
+
 //run application on a port
 app.listen(PORT);
 console.log(`Application (${env}) is listening on port ${PORT}`);
