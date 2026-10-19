@@ -1,14 +1,20 @@
 from flask import Flask, request, jsonify
-from sql import execute_read_query, execute_update_query, create_connection 
+# FIX 1: Changed create_connection to DBconnection
+from sql import execute_read_query, execute_update_query, DBconnection 
 import creds 
 
 app = Flask(__name__)
 
+# FIX 2: Added the /health endpoint back!
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "API is healthy and running!"}), 200
+
 # --- DATABASE CONNECTION ---
 def get_db_connection():
     mycreds = creds.mycreds()
-    return create_connection(mycreds.hostname, mycreds.username, mycreds.password, mycreds.database)
-
+    # FIX 1: Changed create_connection to DBconnection
+    return DBconnection(mycreds.hostname, mycreds.username, mycreds.password, mycreds.database)
 
 # ==========================================
 # 1. SUPPLIER CRUD
