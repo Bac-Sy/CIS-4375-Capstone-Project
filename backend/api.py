@@ -75,7 +75,13 @@ def update_supplier(supplier_id):
 @app.route('/api/suppliers/<int:supplier_id>', methods=['DELETE'])
 def delete_supplier(supplier_id):
     mycon = get_connection()
+    #a supplier with products can't be deleted because the products reference its Supplier_ID
+    products = execute_read_query(mycon, "SELECT Product_ID FROM Product WHERE Supplier_ID=%s", (supplier_id,))
+    if products:
+        mycon.close()
+        return jsonify({"message": "This supplier has products and can't be deleted."}), 409
     execute_update_query(mycon, "DELETE FROM Supplier WHERE Supplier_ID=%s", (supplier_id,))
+    mycon.close()
     return jsonify({"message": "Supplier deleted!"}), 200
 
 
@@ -110,7 +116,13 @@ def update_category(category_id):
 @app.route('/api/categories/<int:category_id>', methods=['DELETE'])
 def delete_category(category_id):
     mycon = get_connection()
+    #a category with products can't be deleted because the products reference its Category_ID
+    products = execute_read_query(mycon, "SELECT Product_ID FROM Product WHERE Category_ID=%s", (category_id,))
+    if products:
+        mycon.close()
+        return jsonify({"message": "This category has products and can't be deleted."}), 409
     execute_update_query(mycon, "DELETE FROM Category WHERE Category_ID=%s", (category_id,))
+    mycon.close()
     return jsonify({"message": "Category deleted!"}), 200
 
 # CRUD for the Employee Table
@@ -792,7 +804,13 @@ def update_location(location_id):
 @app.route('/api/locations/<int:location_id>', methods=['DELETE'])
 def delete_location(location_id):
     mycon = get_connection()
+    #a location with product variants can't be deleted because the variants reference its Location_ID
+    variants = execute_read_query(mycon, "SELECT Variant_ID FROM Product_Variant WHERE Location_ID=%s", (location_id,))
+    if variants:
+        mycon.close()
+        return jsonify({"message": "This location has product variants and can't be deleted."}), 409
     execute_update_query(mycon, "DELETE FROM Location WHERE Location_ID=%s", (location_id,))
+    mycon.close()
     return jsonify({"message": "Location deleted!"}), 200
 
 
@@ -827,7 +845,13 @@ def update_product(product_id):
 @app.route('/api/products/<int:product_id>', methods=['DELETE'])
 def delete_product(product_id):
     mycon = get_connection()
+    #a product with variants can't be deleted because the variants reference its Product_ID
+    variants = execute_read_query(mycon, "SELECT Variant_ID FROM Product_Variant WHERE Product_ID=%s", (product_id,))
+    if variants:
+        mycon.close()
+        return jsonify({"message": "This product has variants and can't be deleted."}), 409
     execute_update_query(mycon, "DELETE FROM Product WHERE Product_ID=%s", (product_id,))
+    mycon.close()
     return jsonify({"message": "Product deleted!"}), 200
 
 
@@ -862,7 +886,14 @@ def update_product_variant(variant_id):
 @app.route('/api/product_variants/<int:variant_id>', methods=['DELETE'])
 def delete_product_variant(variant_id):
     mycon = get_connection()
+    #a variant with inventory or invoices can't be deleted because those rows reference its Variant_ID
+    inventory = execute_read_query(mycon, "SELECT Inventory_ID FROM Inventory WHERE Variant_ID=%s", (variant_id,))
+    invoices = execute_read_query(mycon, "SELECT Invoice_ID FROM Invoice WHERE Variant_ID=%s", (variant_id,))
+    if inventory or invoices:
+        mycon.close()
+        return jsonify({"message": "This variant has inventory or invoices and can't be deleted."}), 409
     execute_update_query(mycon, "DELETE FROM Product_Variant WHERE Variant_ID=%s", (variant_id,))
+    mycon.close()
     return jsonify({"message": "Product Variant deleted!"}), 200
 
 

@@ -27,6 +27,14 @@ app.use(session({
 }));
 
 
+//shows the API's reason (like "has products") when a request fails, or a general message if there isn't one
+function apiError(err, fallback) {
+    return err.response && err.response.data && err.response.data.message
+        ? err.response.data.message
+        : fallback;
+}
+
+
 app.get('/', (req, res) => {
     axios.get(`${API_URL}/health`)                   //checks that the flask API is running
         .then((response) => {
@@ -66,6 +74,17 @@ app.post('/suppliers/:id/edit', (req, res) => {
         })
         .catch(() => {
             res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
+
+//DELETE SUPPLIER: remove the supplier through the flask API
+app.post('/suppliers/:id/delete', (req, res) => {
+    axios.delete(`${API_URL}/api/suppliers/${req.params.id}`)
+        .then(() => {
+            res.render('index', { message: `Supplier ${req.params.id} deleted.` });
+        })
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not delete. Make sure backend/api.py is running.') });
         });
 });
 
