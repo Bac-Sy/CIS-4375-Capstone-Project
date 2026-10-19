@@ -69,7 +69,34 @@ app.post('/suppliers/:id/edit', (req, res) => {
         });
 });
 
+//EDIT CATEGORY: load the category and show the form with current values filled in
+app.get('/categories/:id/edit', (req, res) => {
+    axios.get(`${API_URL}/api/categories`)
+        .then((response) => {
+            const category = response.data.find(c => c.Category_ID == req.params.id);
+            if (!category) {
+                return res.render('index', { message: `No category found with ID ${req.params.id}.` });
+            }
+            res.render('edit-category', { category: category });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not load the category. Make sure backend/api.py is running.' });
+        });
+});
 
+//EDIT CATEGORY: send the changes to the flask API
+app.post('/categories/:id/edit', (req, res) => {
+    const updated = {
+        Category: req.body.Category
+    };
+    axios.put(`${API_URL}/api/categories/${req.params.id}`, updated)
+        .then(() => {
+            res.render('index', { message: `Category ${req.params.id} updated.` });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
 //run application on a port
 app.listen(PORT);
 console.log(`Application (${env}) is listening on port ${PORT}`);
