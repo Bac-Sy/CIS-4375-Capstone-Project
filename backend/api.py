@@ -14,7 +14,6 @@ from sql import execute_update_query
 #needed for password hashing
 from argon2 import PasswordHasher
 from argon2 import exceptions
-from argon2 import verify_password
 
 
 app = flask.Flask(__name__)
@@ -340,6 +339,7 @@ def updateInvoice():
             return jsonify({'message' : 'There is not enough stock to complete this request. %s items are in stock.' % (currentStock)}), 400
 
     #if all checks passe, then the update will be applied to the system.
+    if transactionTypeID:
         sql3 = "update Invoice set Transaction_Type_ID = '%s' where Invoice_ID = '%s'" % (transactionTypeID, invoiceID)
         execute_update_query(mycon,sql3)
 
