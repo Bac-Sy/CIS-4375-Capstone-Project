@@ -171,6 +171,53 @@ app.post('/products/:id/edit', (req, res) => {
 });
 
 
+//EDIT VARIANT: load the variant plus the size, color, product and location lists for the dropdowns
+app.get('/variants/:id/edit', (req, res) => {
+    Promise.all([
+        axios.get(`${API_URL}/api/product_variants`),
+        axios.get(`${API_URL}/show/all/sizes`),
+        axios.get(`${API_URL}/show/all/colors`),
+        axios.get(`${API_URL}/api/products`),
+        axios.get(`${API_URL}/api/locations`)
+    ])
+        .then(([variantRes, sizeRes, colorRes, productRes, locationRes]) => {
+            const variant = variantRes.data.find(v => v.Variant_ID == req.params.id);
+            if (!variant) {
+                return res.render('index', { message: `No variant found with ID ${req.params.id}.` });
+            }
+            res.render('edit-variant', {
+                variant: variant,
+                sizes: sizeRes.data,
+                colors: colorRes.data,
+                products: productRes.data,
+                locations: locationRes.data
+            });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not load the variant. Make sure backend/api.py is running.' });
+        });
+});
+
+//EDIT VARIANT: send the changes to the flask API
+app.post('/variants/:id/edit', (req, res) => {
+    const updated = {
+        Size_ID: req.body.Size_ID,
+        Color_ID: req.body.Color_ID,
+        Product_ID: req.body.Product_ID,
+        Location_ID: req.body.Location_ID,
+        Price: req.body.Price,
+        Cost: req.body.Cost
+    };
+    axios.put(`${API_URL}/api/product_variants/${req.params.id}`, updated)
+        .then(() => {
+            res.render('index', { message: `Variant ${req.params.id} updated.` });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
+
+
 //run application on a port
 app.listen(PORT);
 console.log(`Application (${env}) is listening on port ${PORT}`);

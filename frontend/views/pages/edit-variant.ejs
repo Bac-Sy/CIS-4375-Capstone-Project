@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Edit variant' }); %>
+</head>
+
+<body>
+<%- include('../template/nav'); %>
+<main>
+<div class="container" style="max-width: 600px;">
+<h2 class="mb-4">Edit variant #<%= variant.Variant_ID %></h2>
+
+<form action="/variants/<%= variant.Variant_ID %>/edit" method="POST"
+data-confirm="Save changes to variant #<%= variant.Variant_ID %>?"
+data-confirm-button="Save changes">
+<div class="mb-3">
+<label for="Product_ID" class="form-label">Product</label>
+<select class="form-select" id="Product_ID" name="Product_ID" required>
+<% products.forEach(function(p) { %>
+<option value="<%= p.Product_ID %>" <%= p.Product_ID == variant.Product_ID ? 'selected' : '' %>><%= p.Name %></option>
+<% }); %>
+</select>
+</div>
+
+<div class="mb-3">
+<label for="Size_ID" class="form-label">Size</label>
+<select class="form-select" id="Size_ID" name="Size_ID" required>
+<% sizes.forEach(function(s) { %>
+<option value="<%= s.Size_ID %>" <%= s.Size_ID == variant.Size_ID ? 'selected' : '' %>><%= s.Size %></option>
+<% }); %>
+</select>
+</div>
+
+<div class="mb-3">
+<label for="Color_ID" class="form-label">Color</label>
+<select class="form-select" id="Color_ID" name="Color_ID" required>
+<% colors.forEach(function(c) { %>
+<option value="<%= c.Color_ID %>" <%= c.Color_ID == variant.Color_ID ? 'selected' : '' %>><%= c.Color %></option>
+<% }); %>
+</select>
+</div>
+
+<div class="mb-3">
+<label for="Location_ID" class="form-label">Location</label>
+<select class="form-select" id="Location_ID" name="Location_ID" required>
+<% locations.forEach(function(l) { %>
+<option value="<%= l.Location_ID %>" <%= l.Location_ID == variant.Location_ID ? 'selected' : '' %>><%= l.Location_Name %></option>
+<% }); %>
+</select>
+</div>
+
+<div class="mb-3">
+<label for="Price" class="form-label">Price</label>
+<input type="number" class="form-control" id="Price" name="Price"
+value="<%= variant.Price %>" step="0.01" min="0" required>
+</div>
+
+<div class="mb-3">
+<label for="Cost" class="form-label">Cost</label>
+<input type="number" class="form-control" id="Cost" name="Cost"
+value="<%= variant.Cost %>" step="0.01" min="0" required>
+</div>
+
+<button type="submit" class="btn btn-primary">Save changes</button>
+<a href="/" class="btn btn-outline-secondary">Cancel</a>
+</form>
+</div>
+</main>
+<%- include('../template/footer'); %>
+<%- include('../template/scripts'); %>
+<%- include('../template/confirm'); %>
+</body>
+</html>
