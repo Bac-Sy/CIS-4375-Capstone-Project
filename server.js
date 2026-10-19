@@ -118,6 +118,17 @@ app.post('/categories/:id/edit', (req, res) => {
         });
 });
 
+//DELETE CATEGORY: remove the category through the flask API
+app.post('/categories/:id/delete', (req, res) => {
+    axios.delete(`${API_URL}/api/categories/${req.params.id}`)
+        .then(() => {
+            res.render('index', { message: `Category ${req.params.id} deleted.` });
+        })
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not delete. Make sure backend/api.py is running.') });
+        });
+});
+
 
 //EDIT LOCATION: load the location and show the form with current values filled in
 app.get('/locations/:id/edit', (req, res) => {
@@ -145,6 +156,17 @@ app.post('/locations/:id/edit', (req, res) => {
         })
         .catch(() => {
             res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
+
+//DELETE LOCATION: remove the location through the flask API
+app.post('/locations/:id/delete', (req, res) => {
+    axios.delete(`${API_URL}/api/locations/${req.params.id}`)
+        .then(() => {
+            res.render('index', { message: `Location ${req.params.id} deleted.` });
+        })
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not delete. Make sure backend/api.py is running.') });
         });
 });
 
@@ -186,6 +208,17 @@ app.post('/products/:id/edit', (req, res) => {
         })
         .catch(() => {
             res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
+
+//DELETE PRODUCT: remove the product through the flask API
+app.post('/products/:id/delete', (req, res) => {
+    axios.delete(`${API_URL}/api/products/${req.params.id}`)
+        .then(() => {
+            res.render('index', { message: `Product ${req.params.id} deleted.` });
+        })
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not delete. Make sure backend/api.py is running.') });
         });
 });
 
@@ -233,6 +266,17 @@ app.post('/variants/:id/edit', (req, res) => {
         })
         .catch(() => {
             res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        });
+});
+
+//DELETE VARIANT: remove the variant through the flask API
+app.post('/variants/:id/delete', (req, res) => {
+    axios.delete(`${API_URL}/api/product_variants/${req.params.id}`)
+        .then(() => {
+            res.render('index', { message: `Variant ${req.params.id} deleted.` });
+        })
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not delete. Make sure backend/api.py is running.') });
         });
 });
 

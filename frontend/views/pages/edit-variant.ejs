@@ -64,6 +64,13 @@ value="<%= variant.Cost %>" step="0.01" min="0" required>
 <button type="submit" class="btn btn-primary">Save changes</button>
 <a href="/" class="btn btn-outline-secondary">Cancel</a>
 </form>
+
+<hr class="my-4">
+<form action="/variants/<%= variant.Variant_ID %>/delete" method="POST"
+data-confirm="Delete variant #<%= variant.Variant_ID %>? This can't be undone."
+data-confirm-button="Delete">
+<button type="submit" class="btn btn-outline-danger">Delete variant</button>
+</form>
 </div>
 </main>
 <%- include('../template/footer'); %>

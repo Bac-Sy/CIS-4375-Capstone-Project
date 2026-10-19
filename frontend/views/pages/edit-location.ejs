@@ -22,6 +22,13 @@ value="<%= location.Location_Name %>" required>
 <button type="submit" class="btn btn-primary">Save changes</button>
 <a href="/" class="btn btn-outline-secondary">Cancel</a>
 </form>
+
+<hr class="my-4">
+<form action="/locations/<%= location.Location_ID %>/delete" method="POST"
+data-confirm="Delete <%= location.Location_Name %>? This can't be undone."
+data-confirm-button="Delete">
+<button type="submit" class="btn btn-outline-danger">Delete location</button>
+</form>
 </div>
 </main>
 <%- include('../template/footer'); %>
