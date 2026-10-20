@@ -1,0 +1,10 @@
+<footer class="page-footer">
+  <% if (typeof showStatus !== 'undefined' && showStatus) { %>
+    <p class="status">
+      Environment: <strong><%= env %></strong>
+      &nbsp;|&nbsp;
+      Flask API status: <strong><%= api.status %></strong>
+    </p>
+  <% } %>
+  <p class="brand">Space City Couture</p>
+</footer>

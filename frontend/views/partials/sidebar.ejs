@@ -1,0 +1,39 @@
+<%
+  const navItems = [
+    { key: 'dashboard', label: 'Dashboard', href: '/' },
+    { key: 'inventory', label: 'Inventory', href: '/inventory' },
+    { key: 'orders',    label: 'Orders',    href: '/orders' },
+    { key: 'employees', label: 'Employees', href: '/employees' },
+    { key: 'settings',  label: 'Settings',  href: '/settings' }
+  ];
+%>
+<aside class="sidebar" id="sidebar" aria-label="Site navigation">
+  <button type="button" class="menu-btn drawer-close" data-menu-toggle aria-label="Close menu" aria-expanded="false" aria-controls="sidebar">
+    <span></span><span></span>
+  </button>
+
+  <div class="sidebar-top">
+    <div class="logo" role="img" aria-label="Logo placeholder"></div>
+    <nav class="nav" aria-label="Main">
+      <% navItems.forEach(item => { %>
+        <a href="<%= item.href %>"
+           class="<%= active === item.key ? 'active' : '' %>"
+           <% if (active === item.key) { %>aria-current="page"<% } %>><%= item.label %></a>
+      <% }) %>
+    </nav>
+  </div>
+
+  <div class="sidebar-user">
+    <div>
+      <div class="user-name"><%= user.name %></div>
+      <div class="user-username"><%= user.username %></div>
+    </div>
+    <a href="#" class="logout" aria-label="Log out">
+      <svg viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
+        <circle cx="24" cy="24" r="22" fill="none" stroke="currentColor" stroke-width="3"/>
+        <path d="M15 12 L26 15 V35 L15 38 Z" fill="#7bb8f5" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M28 24 H38 M34 19 L39 24 L34 29" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+  </div>
+</aside>
