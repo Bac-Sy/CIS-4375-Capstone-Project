@@ -1,40 +1,43 @@
 import os
-
 import flask
-from flask import jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-from flask import request
 
-#importing database credentials
+# importing database credentials
 import creds
-from sql import DBconnection, execute_read_query
-from sql import execute_update_query
+from sql import DBconnection, execute_read_query, execute_update_query
 
-#needed for password hashing
-from argon2 import PasswordHasher
-from argon2 import exceptions
+# needed for password hashing
+from argon2 import PasswordHasher, exceptions
 
+# Initialize Flask app
+app = Flask(__name__)
 
-app = flask.Flask(__name__)
-CORS(app, supports_credentials=True,
-     resources={r"/*": {"origins": os.getenv("FRONTEND_URL", "http://localhost:8080")}})
+# --- RESTORED CORS & DEBUG LOGIC ---
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+CORS(app, supports_credentials=True, origins=[frontend_url, "http://localhost:8080", "http://127.0.0.1:8080"])
 app.config['DEBUG'] = creds.APP_ENV == "development"
 
-
 # --- DATABASE CONNECTION ---
-def get_connection():
+def get_db_connection():
     mycreds = creds.mycreds()
     return DBconnection(mycreds.hostname, mycreds.username, mycreds.password, mycreds.database)
 
-
-# Health check: confirms the API is running and which environment it's in.
-@app.route("/health", methods=['GET'])
-def health():
-    return jsonify({"status": "ok", "env": creds.APP_ENV})
+# Fix for older routes that might still use the old function name
+get_connection = get_db_connection
 
 
-# Database check: confirms the API can reach the RDS database.
-@app.route("/db/check", methods=['GET'])
+# --- RESTORED HEALTH CHECKS ---
+@app.route('/health', methods=['GET'])
+def health_check():
+    # Restored "ok" and "env" per review
+    return jsonify({
+        "status": "ok",
+        "env": creds.APP_ENV,
+        "message": "API is healthy and running!"
+    }), 200
+
+@app.route('/db/check', methods=['GET'])
 def db_check():
     mycon = get_connection()
     if mycon is None:
