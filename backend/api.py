@@ -14,7 +14,8 @@ from argon2 import PasswordHasher, exceptions
 app = Flask(__name__)
 
 # --- RESTORED CORS & DEBUG LOGIC ---
-CORS(app) 
+CORS(app, supports_credentials=True,
+     resources={r"/*": {"origins": os.getenv("FRONTEND_URL", "http://localhost:8080")}})
 app.config['DEBUG'] = creds.APP_ENV == "development"
 
 # --- DATABASE CONNECTION ---
