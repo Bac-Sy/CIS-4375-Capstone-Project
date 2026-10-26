@@ -1,29 +1,48 @@
+import os
 from flask import Flask, request, jsonify
-# FIX 1: Changed create_connection to DBconnection
-from sql import execute_read_query, execute_update_query, DBconnection 
+from flask_cors import CORS
+from argon2 import PasswordHasher, exceptions
 import creds 
+from sql import execute_read_query, execute_update_query, DBconnection 
 
 app = Flask(__name__)
 
-# FIX 2: Added the /health endpoint back!
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "API is healthy and running!"}), 200
+# --- RESTORED CORS & DEBUG LOGIC ---
+CORS(app) 
+app.config['DEBUG'] = creds.APP_ENV == "development"
 
 # --- DATABASE CONNECTION ---
 def get_db_connection():
     mycreds = creds.mycreds()
-    # FIX 1: Changed create_connection to DBconnection
     return DBconnection(mycreds.hostname, mycreds.username, mycreds.password, mycreds.database)
+
+# Fix for older routes that might still use the old function name
+get_connection = get_db_connection
+
+
+# --- RESTORED HEALTH CHECKS ---
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "API is healthy and running!"}), 200
+
+@app.route('/db/check', methods=['GET'])
+def db_check():
+    mycon = get_db_connection()
+    if mycon:
+        mycon.close()
+        return jsonify({"message": "Database connection successful!"}), 200
+    else:
+        return jsonify({"message": "Database connection failed!"}), 500
+
 
 # ==========================================
 # 1. SUPPLIER CRUD
-# Columns: Supplier_ID (PK), Name, Email, Phone
 # ==========================================
 @app.route('/api/suppliers', methods=['GET'])
 def get_suppliers():
     mycon = get_db_connection()
-    suppliers = execute_read_query(mycon, "SELECT * FROM Supplier", ())
+    # Removed the () from the end of execute_read_query!
+    suppliers = execute_read_query(mycon, "SELECT * FROM Supplier")
     return jsonify(suppliers), 200
 
 @app.route('/api/suppliers', methods=['POST'])
@@ -53,12 +72,11 @@ def delete_supplier(supplier_id):
 
 # ==========================================
 # 2. CATEGORY CRUD
-# Columns: Category_ID (PK), Category
 # ==========================================
 @app.route('/api/categories', methods=['GET'])
 def get_categories():
     mycon = get_db_connection()
-    categories = execute_read_query(mycon, "SELECT * FROM Category", ())
+    categories = execute_read_query(mycon, "SELECT * FROM Category")
     return jsonify(categories), 200
 
 @app.route('/api/categories', methods=['POST'])
@@ -88,12 +106,11 @@ def delete_category(category_id):
 
 # ==========================================
 # 3. LOCATION CRUD
-# Columns: Location_ID (PK), Location_Name
 # ==========================================
 @app.route('/api/locations', methods=['GET'])
 def get_locations():
     mycon = get_db_connection()
-    locations = execute_read_query(mycon, "SELECT * FROM Location", ())
+    locations = execute_read_query(mycon, "SELECT * FROM Location")
     return jsonify(locations), 200
 
 @app.route('/api/locations', methods=['POST'])
@@ -123,12 +140,11 @@ def delete_location(location_id):
 
 # ==========================================
 # 4. PRODUCT CRUD
-# Columns: Product_ID (PK), Name, Category_ID (FK), Availability, Supplier_ID (FK)
 # ==========================================
 @app.route('/api/products', methods=['GET'])
 def get_products():
     mycon = get_db_connection()
-    products = execute_read_query(mycon, "SELECT * FROM Product", ())
+    products = execute_read_query(mycon, "SELECT * FROM Product")
     return jsonify(products), 200
 
 @app.route('/api/products', methods=['POST'])
@@ -158,12 +174,11 @@ def delete_product(product_id):
 
 # ==========================================
 # 5. PRODUCT VARIANT CRUD
-# Columns: Variant_ID (PK), Size_ID (FK), Color_ID (FK), Product_ID (FK), Location_ID (FK), Price, Cost
 # ==========================================
 @app.route('/api/product_variants', methods=['GET'])
 def get_product_variants():
     mycon = get_db_connection()
-    variants = execute_read_query(mycon, "SELECT * FROM Product_Variant", ())
+    variants = execute_read_query(mycon, "SELECT * FROM Product_Variant")
     return jsonify(variants), 200
 
 @app.route('/api/product_variants', methods=['POST'])
@@ -193,12 +208,11 @@ def delete_product_variant(variant_id):
 
 # ==========================================
 # 6. INVENTORY CRUD
-# Columns: Inventory_ID (PK), Quantity, Variant_ID (FK)
 # ==========================================
 @app.route('/api/inventory', methods=['GET'])
 def get_inventory():
     mycon = get_db_connection()
-    inventory = execute_read_query(mycon, "SELECT * FROM Inventory", ())
+    inventory = execute_read_query(mycon, "SELECT * FROM Inventory")
     return jsonify(inventory), 200
 
 @app.route('/api/inventory', methods=['POST'])
@@ -226,6 +240,7 @@ def delete_inventory(inventory_id):
     return jsonify({"message": "Inventory record deleted!"}), 200
 
 
-# --- START THE API ---
+# --- RESTORED DYNAMIC PORT START ---
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    # Uses the API_PORT from the environment, defaults to 5000 if not found
+    app.run(port=int(os.getenv("API_PORT", "5000")))
