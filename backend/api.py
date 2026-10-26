@@ -1,40 +1,43 @@
 import os
-
-
 import flask
-from flask import jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-from flask import request
 
-#importing database credentials
+# importing database credentials
 import creds
-from sql import DBconnection, execute_read_query
-from sql import execute_update_query
+from sql import DBconnection, execute_read_query, execute_update_query
 
-#needed for password hashing
-from argon2 import PasswordHasher
-from argon2 import exceptions
+# needed for password hashing
+from argon2 import PasswordHasher, exceptions
 
+# Initialize Flask app
+app = Flask(__name__)
 
-app = flask.Flask(__name__)
-CORS(app, supports_credentials=True,
-     resources={r"/*": {"origins": os.getenv("FRONTEND_URL", "http://localhost:8080")}})
+# --- RESTORED CORS & DEBUG LOGIC ---
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+CORS(app, supports_credentials=True, origins=[frontend_url, "http://localhost:8080", "http://127.0.0.1:8080"])
 app.config['DEBUG'] = creds.APP_ENV == "development"
 
-
-def get_connection():
+# --- DATABASE CONNECTION ---
+def get_db_connection():
     mycreds = creds.mycreds()
     return DBconnection(mycreds.hostname, mycreds.username, mycreds.password, mycreds.database)
 
-
-# Health check: confirms the API is running and which environment it's in.
-@app.route("/health", methods=['GET'])
-def health():
-    return jsonify({"status": "ok", "env": creds.APP_ENV})
+# Fix for older routes that might still use the old function name
+get_connection = get_db_connection
 
 
-# Database check: confirms the API can reach the RDS database.
-@app.route("/db/check", methods=['GET'])
+# --- RESTORED HEALTH CHECKS ---
+@app.route('/health', methods=['GET'])
+def health_check():
+    # Restored "ok" and "env" per review
+    return jsonify({
+        "status": "ok",
+        "env": creds.APP_ENV,
+        "message": "API is healthy and running!"
+    }), 200
+
+@app.route('/db/check', methods=['GET'])
 def db_check():
     mycon = get_connection()
     if mycon is None:
@@ -42,6 +45,359 @@ def db_check():
     result = execute_read_query(mycon, "select database() as db")
     mycon.close()
     return jsonify({"connected": True, "database": result[0]["db"]})
+
+
+# 1. SUPPLIER CRUD
+@app.route('/api/suppliers', methods=['GET'])
+def get_suppliers():
+    mycon = get_db_connection()
+    suppliers = execute_read_query(mycon, "SELECT * FROM Supplier")
+    mycon.close()
+    return jsonify(suppliers), 200
+
+@app.route('/api/suppliers', methods=['POST'])
+def add_supplier():
+    data = request.json
+    if not data or not data.get('Name'):
+        return jsonify({"message": "Supplier Name is required."}), 400
+
+    mycon = get_db_connection()
+    query = "INSERT INTO Supplier (Name, Email, Phone) VALUES (%s, %s, %s)"
+    params = (data['Name'], data.get('Email'), data.get('Phone'))
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Supplier added!"}), 201
+
+@app.route('/api/suppliers/<int:supplier_id>', methods=['PUT'])
+def update_supplier(supplier_id):
+    data = request.json
+    mycon = get_db_connection()
+
+    # Check if supplier exists first
+    existing = execute_read_query(mycon, "SELECT Supplier_ID FROM Supplier WHERE Supplier_ID = %s", (supplier_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Supplier not found."}), 404
+
+    query = "UPDATE Supplier SET Name=%s, Email=%s, Phone=%s WHERE Supplier_ID=%s"
+    params = (data.get('Name'), data.get('Email'), data.get('Phone'), supplier_id)
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Supplier updated!"}), 200
+
+@app.route('/api/suppliers/<int:supplier_id>', methods=['DELETE'])
+def delete_supplier(supplier_id):
+    mycon = get_db_connection()
+
+    # Check if supplier exists
+    existing = execute_read_query(mycon, "SELECT Supplier_ID FROM Supplier WHERE Supplier_ID = %s", (supplier_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Supplier not found."}), 404
+
+    # Check if products reference this supplier before deleting
+    products = execute_read_query(mycon, "SELECT Product_ID FROM Product WHERE Supplier_ID = %s", (supplier_id,))
+    if products:
+        mycon.close()
+        return jsonify({"message": "This supplier has products attached and cannot be deleted."}), 409
+
+    execute_update_query(mycon, "DELETE FROM Supplier WHERE Supplier_ID=%s", (supplier_id,))
+    mycon.close()
+    return jsonify({"message": "Supplier deleted!"}), 200
+
+
+# 2. CATEGORY CRUD
+@app.route('/api/categories', methods=['GET'])
+def get_categories():
+    mycon = get_db_connection()
+    categories = execute_read_query(mycon, "SELECT * FROM Category")
+    mycon.close()
+    return jsonify(categories), 200
+
+@app.route('/api/categories', methods=['POST'])
+def add_category():
+    data = request.json
+    if not data or not data.get('Category'):
+        return jsonify({"message": "Category name is required."}), 400
+
+    mycon = get_db_connection()
+    query = "INSERT INTO Category (Category) VALUES (%s)"
+    params = (data['Category'],)
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Category added!"}), 201
+
+@app.route('/api/categories/<int:category_id>', methods=['PUT'])
+def update_category(category_id):
+    data = request.json
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Category_ID FROM Category WHERE Category_ID = %s", (category_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Category not found."}), 404
+
+    query = "UPDATE Category SET Category=%s WHERE Category_ID=%s"
+    params = (data.get('Category'), category_id)
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Category updated!"}), 200
+
+@app.route('/api/categories/<int:category_id>', methods=['DELETE'])
+def delete_category(category_id):
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Category_ID FROM Category WHERE Category_ID = %s", (category_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Category not found."}), 404
+
+    products = execute_read_query(mycon, "SELECT Product_ID FROM Product WHERE Category_ID = %s", (category_id,))
+    if products:
+        mycon.close()
+        return jsonify({"message": "This category has products attached and cannot be deleted."}), 409
+
+    execute_update_query(mycon, "DELETE FROM Category WHERE Category_ID=%s", (category_id,))
+    mycon.close()
+    return jsonify({"message": "Category deleted!"}), 200
+
+
+# 3. LOCATION CRUD
+@app.route('/api/locations', methods=['GET'])
+def get_locations():
+    mycon = get_db_connection()
+    locations = execute_read_query(mycon, "SELECT * FROM Location")
+    mycon.close()
+    return jsonify(locations), 200
+
+@app.route('/api/locations', methods=['POST'])
+def add_location():
+    data = request.json
+    if not data or not data.get('Location_Name'):
+        return jsonify({"message": "Location_Name is required."}), 400
+
+    mycon = get_db_connection()
+    query = "INSERT INTO Location (Location_Name) VALUES (%s)"
+    params = (data['Location_Name'],)
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Location added!"}), 201
+
+@app.route('/api/locations/<int:location_id>', methods=['PUT'])
+def update_location(location_id):
+    data = request.json
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Location_ID FROM Location WHERE Location_ID = %s", (location_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Location not found."}), 404
+
+    query = "UPDATE Location SET Location_Name=%s WHERE Location_ID=%s"
+    params = (data.get('Location_Name'), location_id)
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Location updated!"}), 200
+
+@app.route('/api/locations/<int:location_id>', methods=['DELETE'])
+def delete_location(location_id):
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Location_ID FROM Location WHERE Location_ID = %s", (location_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Location not found."}), 404
+
+    variants = execute_read_query(mycon, "SELECT Variant_ID FROM Product_Variant WHERE Location_ID = %s", (str(location_id),))
+    if variants:
+        mycon.close()
+        return jsonify({"message": "This location has product variants stored in it and cannot be deleted."}), 409
+
+    execute_update_query(mycon, "DELETE FROM Location WHERE Location_ID=%s", (location_id,))
+    mycon.close()
+    return jsonify({"message": "Location deleted!"}), 200
+
+
+# 4. PRODUCT CRUD
+@app.route('/api/products', methods=['GET'])
+def get_products():
+    mycon = get_db_connection()
+    products = execute_read_query(mycon, "SELECT * FROM Product")
+    mycon.close()
+    return jsonify(products), 200
+
+@app.route('/api/products', methods=['POST'])
+def add_product():
+    data = request.json
+    mycon = get_db_connection()
+
+    # Validate foreign keys exist
+    cat = execute_read_query(mycon, "SELECT Category_ID FROM Category WHERE Category_ID = %s", (data.get('Category_ID'),))
+    sup = execute_read_query(mycon, "SELECT Supplier_ID FROM Supplier WHERE Supplier_ID = %s", (data.get('Supplier_ID'),))
+    if not cat:
+        mycon.close()
+        return jsonify({"message": "Category_ID does not exist."}), 404
+    if not sup:
+        mycon.close()
+        return jsonify({"message": "Supplier_ID does not exist."}), 404
+
+    query = "INSERT INTO Product (Name, Category_ID, Availability, Supplier_ID) VALUES (%s, %s, %s, %s)"
+    params = (data['Name'], data['Category_ID'], data.get('Availability', True), data['Supplier_ID'])
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Product added!"}), 201
+
+@app.route('/api/products/<int:product_id>', methods=['PUT'])
+def update_product(product_id):
+    data = request.json
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Product_ID FROM Product WHERE Product_ID = %s", (product_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Product not found."}), 404
+
+    query = "UPDATE Product SET Name=%s, Category_ID=%s, Availability=%s, Supplier_ID=%s WHERE Product_ID=%s"
+    params = (data['Name'], data['Category_ID'], data.get('Availability', True), data['Supplier_ID'], product_id)
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Product updated!"}), 200
+
+@app.route('/api/products/<int:product_id>', methods=['DELETE'])
+def delete_product(product_id):
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Product_ID FROM Product WHERE Product_ID = %s", (product_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Product not found."}), 404
+
+    variants = execute_read_query(mycon, "SELECT Variant_ID FROM Product_Variant WHERE Product_ID = %s", (product_id,))
+    if variants:
+        mycon.close()
+        return jsonify({"message": "This product has variants attached and cannot be deleted."}), 409
+
+    execute_update_query(mycon, "DELETE FROM Product WHERE Product_ID=%s", (product_id,))
+    mycon.close()
+    return jsonify({"message": "Product deleted!"}), 200
+
+
+# 5. PRODUCT VARIANT CRUD
+@app.route('/api/product_variants', methods=['GET'])
+def get_product_variants():
+    mycon = get_db_connection()
+    variants = execute_read_query(mycon, "SELECT * FROM Product_Variant")
+    mycon.close()
+    return jsonify(variants), 200
+
+@app.route('/api/product_variants', methods=['POST'])
+def add_product_variant():
+    data = request.json
+    mycon = get_db_connection()
+
+    # Validate foreign keys exist
+    size = execute_read_query(mycon, "SELECT Size_ID FROM Size WHERE Size_ID = %s", (data.get('Size_ID'),))
+    color = execute_read_query(mycon, "SELECT Color_ID FROM Color WHERE Color_ID = %s", (data.get('Color_ID'),))
+    product = execute_read_query(mycon, "SELECT Product_ID FROM Product WHERE Product_ID = %s", (data.get('Product_ID'),))
+    if not size or not color or not product:
+        mycon.close()
+        return jsonify({"message": "Size_ID, Color_ID, or Product_ID does not exist."}), 404
+
+    query = "INSERT INTO Product_Variant (Size_ID, Color_ID, Product_ID, Location_ID, Price, Cost) VALUES (%s, %s, %s, %s, %s, %s)"
+    params = (data['Size_ID'], data['Color_ID'], data['Product_ID'], str(data['Location_ID']), data['Price'], data['Cost'])
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Product Variant added!"}), 201
+
+@app.route('/api/product_variants/<int:variant_id>', methods=['PUT'])
+def update_product_variant(variant_id):
+    data = request.json
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Variant_ID FROM Product_Variant WHERE Variant_ID = %s", (variant_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Product Variant not found."}), 404
+
+    query = "UPDATE Product_Variant SET Size_ID=%s, Color_ID=%s, Product_ID=%s, Location_ID=%s, Price=%s, Cost=%s WHERE Variant_ID=%s"
+    params = (data['Size_ID'], data['Color_ID'], data['Product_ID'], str(data['Location_ID']), data['Price'], data['Cost'], variant_id)
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Product Variant updated!"}), 200
+
+@app.route('/api/product_variants/<int:variant_id>', methods=['DELETE'])
+def delete_product_variant(variant_id):
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Variant_ID FROM Product_Variant WHERE Variant_ID = %s", (variant_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Product Variant not found."}), 404
+
+    in_inventory = execute_read_query(mycon, "SELECT Inventory_ID FROM Inventory WHERE Variant_ID = %s", (variant_id,))
+    in_invoice = execute_read_query(mycon, "SELECT Invoice_ID FROM Invoice WHERE Variant_ID = %s", (variant_id,))
+    if in_inventory or in_invoice:
+        mycon.close()
+        return jsonify({"message": "This variant has inventory or invoice records and cannot be deleted."}), 409
+
+    execute_update_query(mycon, "DELETE FROM Product_Variant WHERE Variant_ID=%s", (variant_id,))
+    mycon.close()
+    return jsonify({"message": "Product Variant deleted!"}), 200
+
+
+# 6. INVENTORY CRUD
+@app.route('/api/inventory', methods=['GET'])
+def get_inventory():
+    mycon = get_db_connection()
+    inventory = execute_read_query(mycon, "SELECT * FROM Inventory")
+    mycon.close()
+    return jsonify(inventory), 200
+
+@app.route('/api/inventory', methods=['POST'])
+def add_inventory():
+    data = request.json
+    mycon = get_db_connection()
+
+    variant = execute_read_query(mycon, "SELECT Variant_ID FROM Product_Variant WHERE Variant_ID = %s", (data.get('Variant_ID'),))
+    if not variant:
+        mycon.close()
+        return jsonify({"message": "Variant_ID does not exist."}), 404
+
+    query = "INSERT INTO Inventory (Quantity, Variant_ID) VALUES (%s, %s)"
+    params = (data['Quantity'], data['Variant_ID'])
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Inventory recorded!"}), 201
+
+@app.route('/api/inventory/<int:inventory_id>', methods=['PUT'])
+def update_inventory(inventory_id):
+    data = request.json
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Inventory_ID FROM Inventory WHERE Inventory_ID = %s", (inventory_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Inventory record not found."}), 404
+
+    query = "UPDATE Inventory SET Quantity=%s, Variant_ID=%s WHERE Inventory_ID=%s"
+    params = (data['Quantity'], data['Variant_ID'], inventory_id)
+    execute_update_query(mycon, query, params)
+    mycon.close()
+    return jsonify({"message": "Inventory updated!"}), 200
+
+@app.route('/api/inventory/<int:inventory_id>', methods=['DELETE'])
+def delete_inventory(inventory_id):
+    mycon = get_db_connection()
+
+    existing = execute_read_query(mycon, "SELECT Inventory_ID FROM Inventory WHERE Inventory_ID = %s", (inventory_id,))
+    if not existing:
+        mycon.close()
+        return jsonify({"message": "Inventory record not found."}), 404
+
+    execute_update_query(mycon, "DELETE FROM Inventory WHERE Inventory_ID=%s", (inventory_id,))
+    mycon.close()
+    return jsonify({"message": "Inventory record deleted!"}), 200
+
 
 # CRUD for the Employee Table
 
@@ -68,7 +424,6 @@ def employeeInformation():
     else:
         return jsonify({"message": "No employee found"}), 404
 
-
 #Create (Add a new employee to the database)
 @app.route('/add/employee',methods=['POST'])
 def addEmployee():
@@ -81,7 +436,6 @@ def addEmployee():
         email = userinput['Email']
         password= userinput['Password']
 
-        
         sql = "select Email from Employee where Email = '%s' " % (email)
         sql2 = "select Username from Employee where Username = '%s'" % (username)
 
@@ -175,6 +529,7 @@ def deleteEmployee():
     execute_update_query(mycon,sql2)
     mycon.close()
     return jsonify({'message' : 'Employee deleted from the system.'})
+
 # Below is the API for the login system
 @app.route('/login', methods=['POST'])
 def login():
@@ -270,7 +625,6 @@ def createInvoice():
     if not employee:
         mycon.close()
         return jsonify({'message' : 'Employee does not exist. Try another ID.'}), 404
-
 
     #The code below here checks to make sure the product variant exists.
     sql3 = "select Quantity from Inventory where Variant_ID = '%s'" % (variantID)
@@ -394,7 +748,6 @@ def deleteInvoice():
     mycon.close()
     return jsonify({'message' : 'Invoice deleted and inventory updated.'})
 
-
 #Below is the CRUD for the Color table
 #Read (pulls all of the colors, used for the color dropdown)
 @app.route('/show/all/colors', methods = ['GET'])
@@ -489,7 +842,6 @@ def deleteColor():
     mycon.close()
     return jsonify({'message' : 'Color deleted.'})
 
-
 #Below is the CRUD for the Size table
 #Read (pulls all of the sizes, used for the size dropdown)
 @app.route('/show/all/sizes', methods = ['GET'])
@@ -583,7 +935,6 @@ def deleteSize():
     execute_update_query(mycon,sql2)
     mycon.close()
     return jsonify({'message' : 'Size deleted.'})
-
 
 #Below is the CRUD for the Transaction_Type table
 #Restock (1) and Sale (2) are used by the invoice system, so they are protected from being renamed or deleted.
@@ -691,4 +1042,6 @@ def deleteTransactionType():
     return jsonify({'message' : 'Transaction type deleted.'})
 
 
-app.run(port=int(os.getenv("API_PORT", "5000")))
+# --- START THE API ---
+if __name__ == '__main__':
+    app.run(port=int(os.getenv("API_PORT", "5000")))
