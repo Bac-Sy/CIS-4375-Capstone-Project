@@ -72,8 +72,8 @@ app.post('/suppliers/:id/edit', (req, res) => {
         .then(() => {
             res.render('index', { message: `Supplier ${req.params.id} updated.` });
         })
-        .catch(() => {
-            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not save changes. Make sure backend/api.py is running.') });
         });
 });
 
@@ -113,8 +113,8 @@ app.post('/categories/:id/edit', (req, res) => {
         .then(() => {
             res.render('index', { message: `Category ${req.params.id} updated.` });
         })
-        .catch(() => {
-            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not save changes. Make sure backend/api.py is running.') });
         });
 });
 
@@ -154,8 +154,8 @@ app.post('/locations/:id/edit', (req, res) => {
         .then(() => {
             res.render('index', { message: `Location ${req.params.id} updated.` });
         })
-        .catch(() => {
-            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not save changes. Make sure backend/api.py is running.') });
         });
 });
 
@@ -206,8 +206,8 @@ app.post('/products/:id/edit', (req, res) => {
         .then(() => {
             res.render('index', { message: `Product ${req.params.id} updated.` });
         })
-        .catch(() => {
-            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not save changes. Make sure backend/api.py is running.') });
         });
 });
 
@@ -264,8 +264,8 @@ app.post('/variants/:id/edit', (req, res) => {
         .then(() => {
             res.render('index', { message: `Variant ${req.params.id} updated.` });
         })
-        .catch(() => {
-            res.render('index', { message: 'Could not save changes. Make sure backend/api.py is running.' });
+        .catch((err) => {
+            res.render('index', { message: apiError(err, 'Could not save changes. Make sure backend/api.py is running.') });
         });
 });
 
