@@ -3,12 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Capstone Project</title>
+  <title>Dashboard | Space City Couture</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <h1>CIS 4375 Capstone Project</h1>
-  <p>Environment: <strong><%= env %></strong></p>
-  <p>Flask API status: <strong><%= api.status %></strong></p>
+  <div class="app">
+    <%- include('partials/sidebar', { active: 'dashboard' }) %>
+
+    <main class="content">
+      <%- include('partials/topbar') %>
+
+      <h1>Welcome, <%= user.name %></h1>
+
+      <section class="dashboard-grid">
+        <div class="card">Sales</div>
+        <div class="card">Recent Orders</div>
+        <div class="card">Low Stock</div>
+        <div class="card">Inventory Trend Graph</div>
+      </section>
+
+      <%- include('partials/footer', { showStatus: true }) %>
+    </main>
+  </div>
+  <script src="/main.js"></script>
 </body>
 </html>
