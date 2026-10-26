@@ -1,0 +1,55 @@
+<!-- Confirmation Dialog Partial -->
+<!-- How to use: add data-confirm="Your message" to any <form>.
+     Optional: data-confirm-button="Delete" (button text)
+               data-confirm-style="danger" (button color: primary, danger, success, warning) -->
+               <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalTitle" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="confirmModalTitle">Are you sure?</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body" id="confirmModalMessage"></div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="confirmModalButton">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+                    const messageBox = document.getElementById('confirmModalMessage');
+                    const confirmButton = document.getElementById('confirmModalButton');
+                    let formToSubmit = null;
+            
+                    // Catches the submit on any form that has data-confirm and shows the popup first
+                    document.addEventListener('submit', function (event) {
+                        const form = event.target;
+                        if (!form.matches('form[data-confirm]')) return;
+            
+                        // Already confirmed, so let it go through
+                        if (form.dataset.confirmed === 'true') {
+                            delete form.dataset.confirmed;
+                            return;
+                        }
+            
+                        event.preventDefault();
+                        formToSubmit = form;
+                        messageBox.textContent = form.dataset.confirm;
+                        confirmButton.textContent = form.dataset.confirmButton || 'Confirm';
+                        confirmButton.className = 'btn btn-' + (form.dataset.confirmStyle || 'primary');
+                        modal.show();
+                    });
+            
+                    // When they click Confirm, submit the form for real
+                    confirmButton.addEventListener('click', function () {
+                        if (!formToSubmit) return;
+                        formToSubmit.dataset.confirmed = 'true';
+                        modal.hide();
+                        formToSubmit.requestSubmit();
+                    });
+                });
+            </script>
