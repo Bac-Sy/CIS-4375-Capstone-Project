@@ -67,7 +67,7 @@ CREATE TABLE Product_Variant (
     Product_ID    INT NOT NULL,
     Location_ID   VARCHAR(20) NOT NULL,   -- str per ERD (no FK: MySQL can't link str to int)
     Price         DECIMAL(10,2) NOT NULL CHECK (Price >= 0),
-    Cost          INT NOT NULL CHECK (Cost >= 0),
+    Cost          DECIMAL(10,2) NOT NULL CHECK (Cost >= 0),
     FOREIGN KEY (Size_ID)     REFERENCES Size(Size_ID),
     FOREIGN KEY (Color_ID)    REFERENCES Color(Color_ID),
     FOREIGN KEY (Product_ID)  REFERENCES Product(Product_ID)
@@ -76,7 +76,7 @@ CREATE TABLE Product_Variant (
 CREATE TABLE Inventory (
     Inventory_ID  INT AUTO_INCREMENT PRIMARY KEY,
     Quantity      INT NOT NULL DEFAULT 0 CHECK (Quantity >= 0),
-    Variant_ID    INT NOT NULL,
+    Variant_ID    INT NOT NULL UNIQUE,   -- one inventory row per variant
     FOREIGN KEY (Variant_ID) REFERENCES Product_Variant(Variant_ID)
 );
 
