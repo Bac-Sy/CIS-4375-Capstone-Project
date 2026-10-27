@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Edit supplier' }); %>
+</head>
+
+<body>
+<%- include('../template/nav'); %>
+<main>
+<div class="container" style="max-width: 600px;">
+<h2 class="mb-4">Edit supplier #<%= supplier.Supplier_ID %></h2>
+
+<form action="/suppliers/<%= supplier.Supplier_ID %>/edit" method="POST"
+data-confirm="Save changes to <%= supplier.Name %>?"
+data-confirm-button="Save changes">
+<div class="mb-3">
+<label for="Name" class="form-label">Name</label>
+<input type="text" class="form-control" id="Name" name="Name"
+value="<%= supplier.Name %>" maxlength="100" required>
+</div>
+
+<div class="mb-3">
+<label for="Email" class="form-label">Email</label>
+<input type="email" class="form-control" id="Email" name="Email"
+value="<%= supplier.Email %>" maxlength="100">
+</div>
+
+<div class="mb-3">
+<label for="Phone" class="form-label">Phone</label>
+<input type="tel" class="form-control" id="Phone" name="Phone"
+value="<%= supplier.Phone %>" maxlength="20">
+</div>
+
+<button type="submit" class="btn btn-primary">Save changes</button>
+<a href="/" class="btn btn-outline-secondary">Cancel</a>
+</form>
+
+<hr class="my-4">
+<form action="/suppliers/<%= supplier.Supplier_ID %>/delete" method="POST"
+data-confirm="Delete <%= supplier.Name %>? This can't be undone."
+data-confirm-button="Delete">
+<button type="submit" class="btn btn-outline-danger">Delete supplier</button>
+</form>
+</div>
+</main>
+<%- include('../template/footer'); %>
+<%- include('../template/scripts'); %>
+<%- include('../template/confirm'); %>
+</body>
+</html>
