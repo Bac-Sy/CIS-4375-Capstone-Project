@@ -1092,20 +1092,8 @@ def add_inventory():
     mycon.close()
     return jsonify({"message": "Inventory recorded!"}), 201
 
-@app.route('/api/inventory/<int:inventory_id>', methods=['PUT'])
-def update_inventory(inventory_id):
-    data = request.json
-    mycon = get_connection()
-    if not row_exists(mycon, "Inventory", "Inventory_ID", inventory_id):
-        mycon.close()
-        return jsonify({"message": "Inventory record not found."}), 404
-    query = "UPDATE Inventory SET Quantity=%s, Variant_ID=%s WHERE Inventory_ID=%s"
-    params = (data['Quantity'], data['Variant_ID'], inventory_id)
-    error = run_write(mycon, query, params)
-    if error:
-        return db_error_response(mycon, error)
-    mycon.close()
-    return jsonify({"message": "Inventory updated!"}), 200
+#There is no update route here on purpose. Stock changes go through PUT /adjust/inventory (in the Invoice section),
+#which records every change as an Adjustment invoice so the stock always has a record behind it.
 
 @app.route('/api/inventory/<int:inventory_id>', methods=['DELETE'])
 def delete_inventory(inventory_id):
