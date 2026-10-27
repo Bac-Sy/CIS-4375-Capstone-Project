@@ -538,6 +538,65 @@ def deleteInvoice():
     mycon.close()
     return jsonify({'message' : 'Invoice deleted and inventory updated.'})
 
+#Update (the inventory edit form. Sets a variant's stock to a new quantity and records the change as an Adjustment invoice.)
+#Variant_ID and New_Quantity come from the edit form. The employee ID gets filled in from the session store.
+#This replaces editing the Inventory table directly, so every stock change has an invoice behind it.
+@app.route('/adjust/inventory', methods=['PUT'])
+def adjustInventory():
+    mycon = get_connection()
+    userinput = request.get_json()
+    variantID = userinput.get('Variant_ID')
+    newQuantity = userinput.get('New_Quantity')
+    employeeID = userinput.get('Employee_ID')
+
+    if not variantID or newQuantity is None or not employeeID:
+        mycon.close()
+        return jsonify({'message' : 'Variant_ID, New_Quantity, and Employee_ID are required.'}), 400
+
+    newQuantity = int(newQuantity)
+    if newQuantity < 0:
+        mycon.close()
+        return jsonify({'message' : 'New_Quantity cannot be below 0.'}), 400
+
+    #pulls the current stock so the difference can be worked out
+    sql = "select Quantity from Inventory where Variant_ID = '%s'" % (variantID)
+    stock = execute_read_query(mycon,sql)
+    if not stock:
+        mycon.close()
+        return jsonify({'message' : 'No inventory record for that variant'}), 404
+
+    #checks that the employee exists
+    sql1 = "select Employee_ID from Employee where Employee_ID = '%s'" % (employeeID)
+    employee = execute_read_query(mycon,sql1)
+    if not employee:
+        mycon.close()
+        return jsonify({'message' : 'Employee does not exist. Try another ID.'}), 404
+
+    #looks up the Adjustment type by name, since its ID is different on each database
+    sql2 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type = 'Adjustment'"
+    adjustment = execute_read_query(mycon,sql2)
+    if not adjustment:
+        mycon.close()
+        return jsonify({'message' : 'The Adjustment transaction type is missing from the database.'}), 500
+
+    currentStock = stock[0]['Quantity']
+    difference = newQuantity - currentStock
+    adjustmentID = adjustment[0]['Transaction_Type_ID']
+
+    #if the count matches the stock already in the system, there is nothing to record
+    if difference == 0:
+        mycon.close()
+        return jsonify({'message' : 'Stock is already %s. No changes made.' % (currentStock)})
+
+    #records the change as an Adjustment invoice and sets the stock to the new quantity
+    sql3 = "insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values ('%s', '%s', CURDATE(), '%s', '%s')" % (adjustmentID, difference, variantID, employeeID)
+    execute_update_query(mycon,sql3)
+    sql4 = "update Inventory set Quantity = '%s' where Variant_ID = '%s'" % (newQuantity, variantID)
+    execute_update_query(mycon,sql4)
+
+    mycon.close()
+    return jsonify({'message' : 'Stock updated from %s to %s.' % (currentStock, newQuantity)})
+
 
 #Below is the CRUD for the Color table
 #Read (pulls all of the colors, used for the color dropdown)
@@ -730,7 +789,7 @@ def deleteSize():
 
 
 #Below is the CRUD for the Transaction_Type table
-#Restock (1) and Sale (2) are used by the invoice system, so they are protected from being renamed or deleted.
+#Restock, Sale, and Adjustment are used by the invoice system, so they are protected from being renamed or deleted.
 #Read (pulls all of the transaction types, used for the invoice dropdown)
 @app.route('/show/all/transaction/types', methods = ['GET'])
 def showAllTransactionTypes():
@@ -775,17 +834,17 @@ def updateTransactionType():
         mycon.close()
         return jsonify({'message' : 'Transaction_Type_ID and Transaction_Type are required.'}), 400
 
-    #Restock and Sale can't be renamed because the invoice system depends on them
-    if int(transactionTypeID) in (1, 2):
-        mycon.close()
-        return jsonify({'message' : "Restock and Sale are used by the invoice system and can't be changed."}), 409
-
     #checks that the transaction type exists
-    sql = "select Transaction_Type_ID from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
+    sql = "select Transaction_Type from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
     storedType = execute_read_query(mycon,sql)
     if not storedType:
         mycon.close()
         return jsonify({'message' : 'Transaction type not found. Try a different Transaction_Type_ID.'}), 404
+
+    #Restock, Sale, and Adjustment can't be renamed because the invoice system depends on them
+    if storedType[0]['Transaction_Type'] in ('Restock', 'Sale', 'Adjustment'):
+        mycon.close()
+        return jsonify({'message' : "Restock, Sale, and Adjustment are used by the invoice system and can't be changed."}), 409
 
     #checks that a different transaction type doesn't already have the new name
     sql1 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type = '%s' and Transaction_Type_ID != '%s'" % (transactionType, transactionTypeID)
@@ -810,17 +869,17 @@ def deleteTransactionType():
         mycon.close()
         return jsonify({'message' : 'Transaction_Type_ID is required.'}), 400
 
-    #Restock and Sale can't be deleted because the invoice system depends on them
-    if int(transactionTypeID) in (1, 2):
-        mycon.close()
-        return jsonify({'message' : "Restock and Sale are used by the invoice system and can't be deleted."}), 409
-
     #checks that the transaction type exists
-    sql = "select Transaction_Type_ID from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
+    sql = "select Transaction_Type from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
     storedType = execute_read_query(mycon,sql)
     if not storedType:
         mycon.close()
         return jsonify({'message' : 'Transaction type not found. Try a different Transaction_Type_ID.'}), 404
+
+    #Restock, Sale, and Adjustment can't be deleted because the invoice system depends on them
+    if storedType[0]['Transaction_Type'] in ('Restock', 'Sale', 'Adjustment'):
+        mycon.close()
+        return jsonify({'message' : "Restock, Sale, and Adjustment are used by the invoice system and can't be deleted."}), 409
 
     #a transaction type used by an invoice can't be deleted
     sql1 = "select Invoice_ID from Invoice where Transaction_Type_ID = '%s'" % (transactionTypeID)
@@ -1033,20 +1092,8 @@ def add_inventory():
     mycon.close()
     return jsonify({"message": "Inventory recorded!"}), 201
 
-@app.route('/api/inventory/<int:inventory_id>', methods=['PUT'])
-def update_inventory(inventory_id):
-    data = request.json
-    mycon = get_connection()
-    if not row_exists(mycon, "Inventory", "Inventory_ID", inventory_id):
-        mycon.close()
-        return jsonify({"message": "Inventory record not found."}), 404
-    query = "UPDATE Inventory SET Quantity=%s, Variant_ID=%s WHERE Inventory_ID=%s"
-    params = (data['Quantity'], data['Variant_ID'], inventory_id)
-    error = run_write(mycon, query, params)
-    if error:
-        return db_error_response(mycon, error)
-    mycon.close()
-    return jsonify({"message": "Inventory updated!"}), 200
+#There is no update route here on purpose. Stock changes go through PUT /adjust/inventory (in the Invoice section),
+#which records every change as an Adjustment invoice so the stock always has a record behind it.
 
 @app.route('/api/inventory/<int:inventory_id>', methods=['DELETE'])
 def delete_inventory(inventory_id):
