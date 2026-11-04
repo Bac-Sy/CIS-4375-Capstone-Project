@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Inventory' }); %>
+</head>
+
+<body>
+<%- include('../template/nav'); %>
+<main>
+<%- include('../template/messages'); %>
+<div class="container">
+<h2 class="mb-4">Inventory</h2>
+
+<% if (rows.length === 0) { %>
+<p>No inventory records yet.</p>
+<% } else { %>
+<div class="table-responsive">
+<table class="table table-striped align-middle">
+<thead>
+<tr>
+<th>Product</th>
+<th>Size</th>
+<th>Color</th>
+<th>Location</th>
+<th>In stock</th>
+<th>Adjust stock</th>
+</tr>
+</thead>
+<tbody>
+<% rows.forEach(function(row) { %>
+<tr>
+<td><%= row.Product %></td>
+<td><%= row.Size %></td>
+<td><%= row.Color %></td>
+<td><%= row.Location %></td>
+<td><%= row.Quantity %></td>
+<td>
+<form action="/inventory/<%= row.Variant_ID %>/adjust" method="POST" class="d-flex gap-2"
+data-confirm="Set the stock for <%= row.Product %> (<%= row.Size %>, <%= row.Color %>) to the new count?"
+data-confirm-button="Update stock">
+<input type="number" class="form-control" name="New_Quantity" value="<%= row.Quantity %>"
+min="0" step="1" required style="max-width: 100px;" aria-label="New stock count">
+<button type="submit" class="btn btn-primary">Save</button>
+</form>
+</td>
+</tr>
+<% }); %>
+</tbody>
+</table>
+</div>
+<% } %>
+</div>
+</main>
+<%- include('../template/footer'); %>
+<%- include('../template/scripts'); %>
+<%- include('../template/confirm'); %>
+</body>
+</html>

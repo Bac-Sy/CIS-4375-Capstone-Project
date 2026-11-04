@@ -281,6 +281,75 @@ app.post('/variants/:id/delete', (req, res) => {
 });
 
 
+//INVENTORY: loads every variant's stock along with its product, size, color, and location names for the inventory table
+function loadInventory() {
+    return Promise.all([
+        axios.get(`${API_URL}/api/inventory`),
+        axios.get(`${API_URL}/api/product_variants`),
+        axios.get(`${API_URL}/api/products`),
+        axios.get(`${API_URL}/show/all/sizes`),
+        axios.get(`${API_URL}/show/all/colors`),
+        axios.get(`${API_URL}/api/locations`)
+    ]).then(([inventoryRes, variantRes, productRes, sizeRes, colorRes, locationRes]) => {
+        const rows = inventoryRes.data.map((item) => {
+            const variant = variantRes.data.find(v => v.Variant_ID == item.Variant_ID) || {};
+            const product = productRes.data.find(p => p.Product_ID == variant.Product_ID) || {};
+            const size = sizeRes.data.find(s => s.Size_ID == variant.Size_ID) || {};
+            const color = colorRes.data.find(c => c.Color_ID == variant.Color_ID) || {};
+            const location = locationRes.data.find(l => l.Location_ID == variant.Location_ID) || {};
+            return {
+                Variant_ID: item.Variant_ID,
+                Product: product.Name || 'Unknown product',
+                Size: size.Size || '',
+                Color: color.Color || '',
+                Location: location.Location_Name || '',
+                Quantity: item.Quantity
+            };
+        });
+        rows.sort((a, b) => a.Product.localeCompare(b.Product));     //keeps the same product's variants next to each other
+        return rows;
+    });
+}
+
+//shows the inventory page with an optional message at the top (like "Stock updated from 10 to 12.")
+function showInventory(res, message) {
+    loadInventory()
+        .then((rows) => {
+            res.render('inventory', { rows: rows, message: message });
+        })
+        .catch(() => {
+            res.render('index', { message: 'Could not load the inventory. Make sure backend/api.py is running.' });
+        });
+}
+
+//INVENTORY PAGE: logged in employees only
+app.get('/inventory', (req, res) => {
+    if (!req.session.EmployeeID) {
+        return res.render('accessdenial');
+    }
+    showInventory(res, null);
+});
+
+//ADJUST STOCK: sends the new count to Bianca's /adjust/inventory route, which records the change as an Adjustment invoice.
+//The Employee_ID comes from the session, so the employee doesn't type it in.
+app.post('/inventory/:variantId/adjust', (req, res) => {
+    if (!req.session.EmployeeID) {
+        return res.render('accessdenial');
+    }
+    axios.put(`${API_URL}/adjust/inventory`, {
+        Variant_ID: req.params.variantId,
+        New_Quantity: req.body.New_Quantity,
+        Employee_ID: req.session.EmployeeID
+    })
+        .then((response) => {
+            showInventory(res, response.data.message);
+        })
+        .catch((err) => {
+            showInventory(res, apiError(err, 'Could not update the stock. Make sure backend/api.py is running.'));
+        });
+});
+
+
 //run application on a port
 app.listen(PORT);
 console.log(`Application (${env}) is listening on port ${PORT}`);
