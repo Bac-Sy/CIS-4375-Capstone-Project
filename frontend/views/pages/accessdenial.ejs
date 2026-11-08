@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Please log in' }); %>
+</head>
+
+<body>
+<%- include('../template/nav'); %>
+<main>
+<div class="container" style="max-width: 600px;">
+<h2 class="mb-3">Please log in</h2>
+<p>You need to be logged in to view that page.</p>
+<a href="/login" class="btn btn-primary">Log in</a>
+</div>
+</main>
+<%- include('../template/footer'); %>
+<%- include('../template/scripts'); %>
+</body>
+</html>
