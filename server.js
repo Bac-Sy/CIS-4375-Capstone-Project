@@ -27,6 +27,14 @@ app.use(session({
 }));
 
 
+//makes the logged in employee's name and role available on every page, so the nav bar can show who is logged in
+app.use((req, res, next) => {
+    res.locals.FirstName = req.session.FirstName || null;
+    res.locals.Role = req.session.Role || null;
+    next();
+});
+
+
 //shows the API's reason (like "has products") when a request fails, or a general message if there isn't one
 function apiError(err, fallback) {
     return err.response && err.response.data && err.response.data.message
@@ -44,6 +52,115 @@ app.get('/', (req, res) => {
             res.render('index', { message: 'Could not reach the API. Make sure backend/api.py is running.' });
         });
 });
+
+
+
+// LOGIN SYSTEM
+
+app.get('/login', (req,res) => {
+    res.render('login', {ErrorMessage: null});
+})
+
+
+// when an employee clicks the submit button on the login form, it sends a post request to this route. The route connects to the login API in api.py.
+app.post('/process/login', (req,res) => {
+
+    const Username = req.body.Username                      // these two lines store the information from the login form.
+    const Password = req.body.Password
+
+    axios.post(`${API_URL}/login`, {                        // connecting to the flask login API with the provided login form data
+        Username: Username,
+        Password: Password
+    })
+    .then(response => {                                     // Once a response is received from the API, if it is successful (200 code), they will be sent to the home page.
+        if (response.status === 200){
+            const userdata = response.data
+
+            req.session.FirstName = userdata.First_Name     // This captures the employee information in the session so it can be displayed throughout the pages.
+            req.session.LastName = userdata.Last_Name       // The Employee_ID is also kept here so it can be sent with invoices without the employee seeing it on any pages.
+            req.session.Email = userdata.Email
+            req.session.Username = userdata.Username
+            req.session.Role = userdata.Role
+            req.session.EmployeeID = userdata.Employee_ID
+
+            res.locals.FirstName = req.session.FirstName    // updates the nav bar for this page too, since the session was just filled in
+            res.locals.Role = req.session.Role
+
+            const message = "Welcome, " + userdata.First_Name + "!"
+            res.render('index', {message: message})
+        }
+    })
+    .catch((error) => {                                     // if the login fails, they are sent back to the login page with a message.
+        let ErrorMessage = "Error logging in. Make sure backend/api.py is running and try again."
+        if (error.response && (error.response.status === 404 || error.response.status === 401)){
+            ErrorMessage = "Error logging in, make sure your username and password are correct."
+        }
+        res.render('login', {ErrorMessage: ErrorMessage});
+    });
+
+});
+
+
+app.get('/logout', (req,res) => {                           //Logout endpoint. When an employee clicks logout, the session is cleared and the home page is shown with a message.
+
+    if (!req.session.EmployeeID){
+        const message = "You are not logged in. To log in, click the link above."
+        res.render('index', {message: message})
+
+    } else {
+        const message = "You have successfully logged out."
+        req.session.destroy(function(error){
+            res.locals.FirstName = null                     // clears the nav bar for this page, since the session was just removed
+            res.locals.Role = null
+            res.render('index', {message: message})
+        })
+    }
+
+})
+
+
+// The following endpoints are for managers only: adding a new employee account.
+app.get('/new/employee', (req,res) => {
+    if (!req.session.EmployeeID){                           // restricts the page to logged in employees.
+        res.render('accessdenial')
+    } else if (req.session.Role !== "Manager"){             // only managers can add new employees.
+        const message = "You do not have permission to access that page."
+        res.render('index', {message: message})
+    } else {
+        res.render('newemployee', {message: null})
+    }
+})
+
+app.post('/create/employee', (req,res) => {
+    if (!req.session.EmployeeID || req.session.Role !== "Manager"){     // checks again here, so the form can't be sent from outside the page.
+        return res.render('accessdenial')
+    }
+
+    const FirstName = req.body.First_Name
+    const LastName = req.body.Last_Name
+    const Role = req.body.Role
+    const Username = req.body.Username
+    const Email = req.body.Email
+    const Password = req.body.Password
+
+    axios.post(`${API_URL}/add/employee`, {
+        First_Name: FirstName,
+        Last_Name: LastName,
+        Role: Role,
+        Username: Username,
+        Email: Email,
+        Password: Password
+    })
+    .then(response => {
+        const message = response.data.message
+        res.render('newemployee', {message: message})
+    })
+    .catch((error) => {                                     // shows the API's reason, like a duplicate email or username.
+        const message = apiError(error, "Error adding the employee, try again.")
+        res.render('newemployee', {message: message})
+    })
+
+})
 
 
 //EDIT SUPPLIER: load the supplier and show the form with current values filled in

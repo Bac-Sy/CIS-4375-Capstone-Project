@@ -4,6 +4,15 @@
         <h3 class="masthead-brand">CIS 4375 Capstone</h3>
         <nav class="nav nav-masthead justify-content-center">
             <a class="nav-link" href="/">Home</a>
+            <% if (typeof FirstName != 'undefined' && FirstName) { %>
+                <% if (Role === 'Manager') { %>
+                    <a class="nav-link" href="/new/employee">Add employee</a>
+                <% } %>
+                <span class="nav-link">Hi, <%= FirstName %></span>
+                <a class="nav-link" href="/logout">Log out</a>
+            <% } else { %>
+                <a class="nav-link" href="/login">Log in</a>
+            <% } %>
         </nav>
     </div>
 </header>

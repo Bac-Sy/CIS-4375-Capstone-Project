@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Log in' }); %>
+</head>
+
+<body>
+<%- include('../template/nav'); %>
+<main>
+<div class="container" style="max-width: 400px;">
+<h2 class="mb-4">Employee login</h2>
+
+<% if (ErrorMessage) { %>
+<div class="alert alert-danger"><%= ErrorMessage %></div>
+<% } %>
+
+<!-- The form posts to /process/login. The input names (Username, Password) must stay the same for the login to work. -->
+<form action="/process/login" method="POST">
+<div class="mb-3">
+<label for="Username" class="form-label">Username</label>
+<input type="text" class="form-control" id="Username" name="Username" autocomplete="username" required>
+</div>
+
+<div class="mb-3">
+<label for="Password" class="form-label">Password</label>
+<input type="password" class="form-control" id="Password" name="Password" autocomplete="current-password" required>
+</div>
+
+<button type="submit" class="btn btn-primary">Log in</button>
+</form>
+</div>
+</main>
+<%- include('../template/footer'); %>
+<%- include('../template/scripts'); %>
+</body>
+</html>
