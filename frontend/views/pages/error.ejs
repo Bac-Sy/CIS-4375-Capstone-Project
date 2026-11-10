@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <%- include('../template/head', { title: 'Error' }); %>
+    </head>
+
+    <body class="auth-body">
+        <main class="auth-card">
+            <img class="auth-logo" src="/images/logo.png" alt="SCC logo">
+            <h1><%= title %></h1>
+            <p class="auth-message"><%= detail %></p>
+            <div class="error-actions">
+              <a class="scc-btn" href="javascript:history.back()">Go back</a>
+              <a class="scc-btn scc-btn-secondary" href="/">Dashboard</a>
+            </div>
+            <p class="auth-brand">Space City Couture</p>
+        </main>
+        <%- include('../template/scripts'); %>
+    </body>
+</html>

@@ -1,17 +1,20 @@
+
 {
   "name": "capstone-frontend",
   "version": "1.0.0",
   "private": true,
-  "main": "server.js",
+  "main": "app.js",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development node --watch server.js",
-    "start:test": "cross-env NODE_ENV=test node server.js",
-    "start": "cross-env NODE_ENV=production node server.js"
+    "dev": "cross-env APP_ENV=development NODE_ENV=development node --watch app.js",
+    "start:test": "cross-env APP_ENV=test NODE_ENV=test node app.js",
+    "start": "cross-env APP_ENV=production NODE_ENV=production node app.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
-    "express": "^4.21.0"
+    "express": "^4.21.0",
+    "express-rate-limit": "^8.7.4",
+    "express-session": "^1.19.0"
   },
   "devDependencies": {
     "cross-env": "^7.0.3"

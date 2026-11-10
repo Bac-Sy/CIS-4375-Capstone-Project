@@ -21,7 +21,14 @@ app.get("/", async (req, res) => {
   } catch (err) {
     api = { status: "unreachable", error: err.message };
   }
-  res.render("index", { env, api });
+  res.render("index", {
+  env,
+  api,
+  user: {
+    name: "Test User",
+    username: "testuser"
+  }
+});
 });
 
 app.listen(PORT, () => {
