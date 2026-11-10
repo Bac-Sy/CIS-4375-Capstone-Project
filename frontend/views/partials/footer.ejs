@@ -1,10 +1,18 @@
-<footer class="page-footer">
-  <% if (typeof showStatus !== 'undefined' && showStatus) { %>
-    <p class="status">
-      Environment: <strong><%= env %></strong>
-      &nbsp;|&nbsp;
-      Flask API status: <strong><%= api.status %></strong>
-    </p>
-  <% } %>
-  <p class="brand">Space City Couture</p>
-</footer>
+<div class="page-bottom">
+    <footer class="page-footer">
+        <% if (typeof showStatus !== 'undefined' && showStatus) {
+             const apiDown = ['unreachable', 'error', 'down'].includes(String(api.status).toLowerCase());
+        %>
+            <div class="status">
+                <span class="chip"><span class="dot dot-blue"></span>Environment: <strong><%= env %></strong></span>
+                <span class="chip"><span class="dot <%= apiDown ? 'dot-red' : 'dot-blue' %>"></span>Flask API status: <strong><%= api.status %></strong></span>
+            </div>
+        <% } %>
+        <p class="brand">Space City Couture</p>
+    </footer>
+    <footer class="mastfoot">
+        <div class="inner">
+            <p>CIS 4375 Capstone Project</p>
+        </div>
+    </footer>
+</div>

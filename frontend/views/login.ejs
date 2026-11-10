@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <%- include('../template/head', { title: 'Log in' }); %>
+    </head>
+
+    <body class="auth-body">
+        <main class="auth-card">
+            <img class="auth-logo" src="/images/logo.png" alt="SCC logo">
+            <h1>Log in</h1>
+            <%- include('../template/messages'); %>
+            <% if (error) { %>
+              <p class="form-error" role="alert"><%= error %></p>
+            <% } %>
+            <form action="/login" method="POST" class="auth-form">
+              <label for="username">Username</label>
+              <input type="text" id="username" name="username" value="<%= username %>" autocomplete="username" required autofocus>
+
+              <label for="password">Password</label>
+              <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+              <button type="submit" class="scc-btn">Log in</button>
+            </form>
+            <p class="auth-brand">Space City Couture</p>
+        </main>
+        <%- include('../template/scripts'); %>
+    </body>
+</html>

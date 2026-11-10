@@ -1,23 +1,54 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Employees | Space City Couture</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <div class="app">
-    <%- include('partials/sidebar', { active: 'employees' }) %>
+    <head>
+        <%- include('../template/head', { title: 'Employees' }); %>
+    </head>
 
-    <main class="content">
-      <%- include('partials/topbar') %>
+    <body>
+        <div class="app">
+            <%- include('../template/nav', { active: 'employees' }); %>
 
-      <h1>Employees</h1>
+            <main class="content">
+                <%- include('../template/topbar'); %>
+                <%- include('../template/messages'); %>
 
-      <%- include('partials/footer') %>
-    </main>
-  </div>
-  <script src="/main.js"></script>
-</body>
+                <header class="page-header">
+                  <h1>Employees</h1>
+                </header>
+
+                <section class="panel">
+                  <div class="panel-bar"><%= fmt.number(employees.length) %> <%= employees.length === 1 ? 'employee' : 'employees' %></div>
+                  <div class="table-scroll">
+                    <table class="data-table">
+                      <caption class="visually-hidden">Employees</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Name</th>
+                          <th scope="col">Username</th>
+                          <th scope="col">Email</th>
+                          <th scope="col">Role</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <% if (!employees.length) { %>
+                          <tr><td colspan="4" class="empty-cell">No employees yet.</td></tr>
+                        <% } %>
+                        <% employees.forEach(e => { %>
+                          <tr>
+                            <td><strong><%= e.first_name %> <%= e.last_name %></strong></td>
+                            <td><%= e.username %></td>
+                            <td><%= e.email %></td>
+                            <td><span class="tag tag-soft"><%= e.role %></span></td>
+                          </tr>
+                        <% }) %>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <%- include('../template/footer'); %>
+            </main>
+        </div>
+        <%- include('../template/scripts'); %>
+    </body>
 </html>

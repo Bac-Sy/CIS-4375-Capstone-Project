@@ -1,23 +1,76 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Inventory | Space City Couture</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <div class="app">
-    <%- include('partials/sidebar', { active: 'inventory' }) %>
+    <head>
+        <%- include('../template/head', { title: 'Inventory' }); %>
+    </head>
 
-    <main class="content">
-      <%- include('partials/topbar') %>
+    <body>
+        <div class="app">
+            <%- include('../template/nav', { active: 'inventory' }); %>
 
-      <h1>Inventory</h1>
+            <main class="content">
+                <%- include('../template/topbar'); %>
+                <%- include('../template/messages'); %>
 
-      <%- include('partials/footer') %>
-    </main>
-  </div>
-  <script src="/main.js"></script>
-</body>
+                <header class="page-header">
+                  <h1>Inventory</h1>
+                </header>
+
+                <section class="panel">
+                  <div class="panel-bar"><%= fmt.number(items.length) %> <%= items.length === 1 ? 'item' : 'items' %></div>
+                  <div class="table-scroll">
+                    <table class="data-table">
+                      <caption class="visually-hidden">Inventory by product variant</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Product</th>
+                          <th scope="col">Category</th>
+                          <th scope="col">Size</th>
+                          <th scope="col">Color</th>
+                          <th scope="col">Location</th>
+                          <th scope="col" class="num">In stock</th>
+                          <th scope="col" class="num">Price</th>
+                          <th scope="col">Supplier</th>
+                          <th scope="col">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <% if (!items.length) { %>
+                          <tr><td colspan="9" class="empty-cell">No inventory yet.</td></tr>
+                        <% } %>
+                        <% items.forEach(item => { %>
+                          <tr>
+                            <td><strong><%= item.product %></strong></td>
+                            <td><%= item.category %></td>
+                            <td><%= item.size %></td>
+                            <td><%= item.color %></td>
+                            <td><%= item.location || 'Unassigned' %></td>
+                            <td class="num">
+                              <% if (item.quantity <= threshold) { %>
+                                <span class="tag tag-red"><%= fmt.number(item.quantity) %></span>
+                              <% } else { %>
+                                <%= fmt.number(item.quantity) %>
+                              <% } %>
+                            </td>
+                            <td class="num"><%= fmt.money(item.price) %></td>
+                            <td><%= item.supplier %></td>
+                            <td>
+                              <% if (item.available) { %>
+                                <span class="tag tag-soft">Available</span>
+                              <% } else { %>
+                                <span class="tag tag-outline">Unavailable</span>
+                              <% } %>
+                            </td>
+                          </tr>
+                        <% }) %>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <%- include('../template/footer'); %>
+            </main>
+        </div>
+        <%- include('../template/scripts'); %>
+    </body>
 </html>

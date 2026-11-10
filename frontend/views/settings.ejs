@@ -1,23 +1,33 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings | Space City Couture</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <div class="app">
-    <%- include('partials/sidebar', { active: 'settings' }) %>
+    <head>
+        <%- include('../template/head', { title: 'Settings' }); %>
+    </head>
 
-    <main class="content">
-      <%- include('partials/topbar') %>
+    <body>
+        <div class="app">
+            <%- include('../template/nav', { active: 'settings' }); %>
 
-      <h1>Settings</h1>
+            <main class="content">
+                <%- include('../template/topbar'); %>
+                <%- include('../template/messages'); %>
 
-      <%- include('partials/footer') %>
-    </main>
-  </div>
-  <script src="/main.js"></script>
-</body>
+                <header class="page-header">
+                  <h1>Settings</h1>
+                </header>
+
+                <section class="panel">
+                  <dl class="details">
+                    <dt>Name</dt><dd><%= user.name %></dd>
+                    <dt>Username</dt><dd><%= user.username %></dd>
+                    <dt>Email</dt><dd><%= user.email %></dd>
+                    <dt>Role</dt><dd><%= user.role %></dd>
+                  </dl>
+                </section>
+
+                <%- include('../template/footer'); %>
+            </main>
+        </div>
+        <%- include('../template/scripts'); %>
+    </body>
 </html>
