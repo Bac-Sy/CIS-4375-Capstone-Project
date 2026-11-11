@@ -65,7 +65,8 @@
     }
   };
 
-  const welcomeName = dashboardUser.firstName || dashboardUser.name || 'User';
+  // server.js stores the logged in employee's first name as FirstName
+  const welcomeName = (typeof FirstName !== 'undefined' && FirstName) || dashboardUser.firstName || dashboardUser.name || '';
 %>
 <!DOCTYPE html>
 <html lang="en">
@@ -74,14 +75,14 @@
 </head>
 <body>
   <div class="app">
-    <%- include('../template/nav', { active: 'dashboard', user: dashboardUser }) %>
+    <%- include('../template/nav', { active: 'dashboard' }) %>
 
     <main class="content">
-      <%- include('../template/topbar', { user: dashboardUser }) %>
+      <%- include('../template/topbar') %>
       <%- include('../template/messages') %>
 
       <header class="page-header">
-        <h1>Welcome, <%= welcomeName %></h1>
+        <h1><%= welcomeName ? 'Welcome, ' + welcomeName : 'Welcome' %></h1>
       </header>
 
       <section class="dashboard-grid" aria-label="Dashboard overview">
@@ -238,7 +239,7 @@
         </article>
       </section>
 
-      <%- include('../template/footer', { showStatus: true }) %>
+      <%- include('../template/footer', { showStatus: typeof api !== 'undefined' && typeof env !== 'undefined' }) %>
     </main>
   </div>
   <%- include('../template/scripts') %>

@@ -724,3 +724,52 @@ h1 {
 
 .mastfoot { padding-top: 0.5rem; text-align: center; font-size: 0.8rem; color: var(--muted); }
 .mastfoot p { margin: 0; }
+
+/* ---------- Forms on the dev pages (edit, add employee, adjust stock) ---------- */
+.form-panel {
+  max-width: 640px;
+  padding: 1.5rem;
+  overflow: visible;
+}
+
+.form-panel hr { border-color: var(--line); opacity: 1; }
+.form-label { font-size: 0.9rem; font-weight: 700; }
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 0.2rem var(--blue-100);
+}
+
+.inline-form { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+.inline-form .form-control { width: 90px; }
+.inline-form .scc-btn { margin-top: 0; padding: 0.45rem 0.9rem; }
+
+.auth-brand a { color: inherit; }
+
+/* Bootstrap buttons in the site colors */
+.btn { border-radius: 12px; font-weight: 700; }
+.btn-primary {
+  --bs-btn-bg: var(--blue);
+  --bs-btn-border-color: var(--blue);
+  --bs-btn-hover-bg: var(--blue-deep);
+  --bs-btn-hover-border-color: var(--blue-deep);
+  --bs-btn-active-bg: var(--blue-deep);
+  --bs-btn-active-border-color: var(--blue-deep);
+}
+.btn-outline-secondary {
+  --bs-btn-color: var(--blue);
+  --bs-btn-border-color: var(--blue);
+  --bs-btn-hover-bg: var(--blue-50);
+  --bs-btn-hover-color: var(--blue);
+  --bs-btn-hover-border-color: var(--blue);
+}
+.btn-danger,
+.btn-outline-danger {
+  --bs-btn-color: var(--red);
+  --bs-btn-border-color: var(--red);
+  --bs-btn-hover-bg: var(--red);
+  --bs-btn-hover-border-color: var(--red);
+  --bs-btn-active-bg: var(--red);
+}
+.btn-danger { --bs-btn-bg: var(--red); --bs-btn-color: var(--white); }

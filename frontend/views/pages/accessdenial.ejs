@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <%- include('../template/head', { title: 'Please log in' }); %>
+    </head>
+
+    <body class="auth-body">
+        <main class="auth-card">
+            <img class="auth-logo" src="/images/logo.png" alt="SCC logo">
+            <h1>Please log in</h1>
+            <p class="auth-message">You need to be logged in to view that page.</p>
+            <div class="error-actions">
+              <a class="scc-btn" href="/login">Log in</a>
+              <a class="scc-btn scc-btn-secondary" href="/">Dashboard</a>
+            </div>
+            <p class="auth-brand">Space City Couture</p>
+        </main>
+        <%- include('../template/scripts'); %>
+    </body>
+</html>

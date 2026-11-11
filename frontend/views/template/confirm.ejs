@@ -1,0 +1,47 @@
+<!-- Confirmation Dialog Partial Template -->
+<!-- Any form with data-confirm="your message" shows this popup before it submits. -->
+<!-- Optional: data-confirm-button="Delete" changes the button text, data-confirm-style="danger" makes it red. -->
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmModalTitle">Please confirm</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="confirmModalMessage"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmModalYes">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        const message = document.getElementById('confirmModalMessage');
+        const yesBtn = document.getElementById('confirmModalYes');
+        let pendingForm = null;
+
+        //stop the form from sending and show the popup instead
+        document.querySelectorAll('form[data-confirm]').forEach((form) => {
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                pendingForm = form;
+                message.textContent = form.dataset.confirm;
+                yesBtn.textContent = form.dataset.confirmButton || 'Confirm';
+                yesBtn.className = form.dataset.confirmStyle === 'danger' ? 'btn btn-danger' : 'btn btn-primary';
+                modal.show();
+            });
+        });
+
+        //user clicked the confirm button: now actually send the form
+        yesBtn.addEventListener('click', () => {
+            if (pendingForm) {
+                modal.hide();
+                pendingForm.submit();
+            }
+        });
+    });
+</script>

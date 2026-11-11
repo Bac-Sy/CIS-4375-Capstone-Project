@@ -1,3 +1,7 @@
+<%
+  // Items at or below this count are highlighted in red.
+  const lowStockThreshold = 5;
+%>
 <!doctype html>
 <html lang="en">
     <head>
@@ -17,56 +21,48 @@
                 </header>
 
                 <section class="panel">
-                  <div class="panel-bar"><%= fmt.number(items.length) %> <%= items.length === 1 ? 'item' : 'items' %></div>
+                  <div class="panel-bar"><%= rows.length %> <%= rows.length === 1 ? 'item' : 'items' %></div>
                   <div class="table-scroll">
                     <table class="data-table">
                       <caption class="visually-hidden">Inventory by product variant</caption>
                       <thead>
                         <tr>
                           <th scope="col">Product</th>
-                          <th scope="col">Category</th>
                           <th scope="col">Size</th>
                           <th scope="col">Color</th>
                           <th scope="col">Location</th>
                           <th scope="col" class="num">In stock</th>
-                          <th scope="col" class="num">Price</th>
-                          <th scope="col">Supplier</th>
-                          <th scope="col">Status</th>
+                          <th scope="col">Adjust stock</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <% if (!dataAvailable) { %>
-                          <tr><td colspan="9" class="empty-cell">Inventory data is unavailable. Check the message above and the Flask database mapping.</td></tr>
-                        <% } else if (!items.length) { %>
-                          <tr><td colspan="9" class="empty-cell">There are no inventory records in the connected data source.</td></tr>
+                        <% if (rows.length === 0) { %>
+                          <tr><td colspan="6" class="empty-cell">No inventory records yet.</td></tr>
                         <% } %>
-                        <% items.forEach(item => { %>
+                        <% rows.forEach(function(row) { %>
                           <tr>
-                            <td><strong><%= item.product %></strong></td>
-                            <td><%= item.category %></td>
-                            <td><%= item.size %></td>
-                            <td><%= item.color %></td>
-                            <td><%= item.location || 'Unassigned' %></td>
+                            <td><strong><%= row.Product %></strong></td>
+                            <td><%= row.Size %></td>
+                            <td><%= row.Color %></td>
+                            <td><%= row.Location || 'Unassigned' %></td>
                             <td class="num">
-                              <% if (item.quantity <= threshold) { %>
-                                <span class="tag tag-red"><%= fmt.number(item.quantity) %></span>
+                              <% if (Number(row.Quantity) <= lowStockThreshold) { %>
+                                <span class="tag tag-red"><%= row.Quantity %></span>
                               <% } else { %>
-                                <%= fmt.number(item.quantity) %>
+                                <%= row.Quantity %>
                               <% } %>
                             </td>
-                            <td class="num"><%= item.price === null ? 'N/A' : fmt.money(item.price) %></td>
-                            <td><%= item.supplier || 'N/A' %></td>
                             <td>
-                              <% if (item.available === null || item.available === undefined) { %>
-                                <span class="tag tag-outline">Unknown</span>
-                              <% } else if (item.available) { %>
-                                <span class="tag tag-soft">Available</span>
-                              <% } else { %>
-                                <span class="tag tag-outline">Unavailable</span>
-                              <% } %>
+                              <form action="/inventory/<%= row.Variant_ID %>/adjust" method="POST" class="inline-form"
+                                    data-confirm="Set the stock for <%= row.Product %> (<%= row.Size %>, <%= row.Color %>) to the new count?"
+                                    data-confirm-button="Update stock">
+                                <input type="number" class="form-control" name="New_Quantity" value="<%= row.Quantity %>"
+                                       min="0" step="1" required aria-label="New stock count for <%= row.Product %>">
+                                <button type="submit" class="scc-btn">Save</button>
+                              </form>
                             </td>
                           </tr>
-                        <% }) %>
+                        <% }); %>
                       </tbody>
                     </table>
                   </div>
@@ -76,5 +72,6 @@
             </main>
         </div>
         <%- include('../template/scripts'); %>
+        <%- include('../template/confirm'); %>
     </body>
 </html>
