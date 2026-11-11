@@ -29,7 +29,7 @@
                   </div>
                   <div class="table-scroll">
                     <table class="data-table">
-                      <caption class="visually-hidden">Invoice records</caption>
+                      <caption class="visually-hidden">Order and transaction records</caption>
                       <thead>
                         <tr>
                           <th scope="col">Invoice</th>
@@ -43,19 +43,21 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <% if (!rows.length) { %>
-                          <tr><td colspan="8" class="empty-cell">No records found.</td></tr>
+                        <% if (!dataAvailable) { %>
+                          <tr><td colspan="8" class="empty-cell">Order data is unavailable. Check the message above and the Flask database mapping.</td></tr>
+                        <% } else if (!rows.length) { %>
+                          <tr><td colspan="8" class="empty-cell">No matching orders found.</td></tr>
                         <% } %>
                         <% rows.forEach(r => { %>
                           <tr>
-                            <td>#<%= r.invoice_id %></td>
+                            <td><%= r.invoice_id == null ? 'N/A' : '#' + r.invoice_id %></td>
                             <td><%= fmt.date(r.date) %></td>
                             <td><span class="tag <%= fmt.tagClass(r.transaction_type) %>"><%= r.transaction_type %></span></td>
                             <td><strong><%= r.product %></strong></td>
                             <td><%= r.size %></td>
                             <td><%= r.color %></td>
                             <td class="num"><span class="qty <%= r.quantity_change < 0 ? 'neg' : 'pos' %>"><%= fmt.signed(r.quantity_change) %></span></td>
-                            <td><%= r.employee %></td>
+                            <td><%= r.employee || 'N/A' %></td>
                           </tr>
                         <% }) %>
                       </tbody>

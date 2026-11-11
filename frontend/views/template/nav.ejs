@@ -37,13 +37,22 @@
       <div class="user-name"><%= user.name %></div>
       <div class="user-username"><%= user.username %></div>
     </div>
-    <form action="/logout" method="POST" class="logout-form">
-      <button type="submit" class="logout" aria-label="Log out">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-          <path d="M16 17l5-5-5-5M21 12H9"/>
+    <% if (authenticated) { %>
+      <form action="/logout" method="POST" class="logout-form">
+        <button type="submit" class="logout" aria-label="Log out" title="Log out">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <path d="M16 17l5-5-5-5M21 12H9"/>
+          </svg>
+        </button>
+      </form>
+    <% } else { %>
+      <a href="/login" class="logout" aria-label="Log in" title="Log in">
+        <svg viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round">
+          <path d="M10 17l5-5-5-5M15 12H3"/>
+          <path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/>
         </svg>
-      </button>
-    </form>
+      </a>
+    <% } %>
   </div>
 </aside>

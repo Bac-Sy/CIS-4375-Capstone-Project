@@ -1,4 +1,5 @@
-// All calls to the Flask API go through here.
+// Server-side client for the Flask API. Never import this into browser JavaScript.
+'use strict';
 
 class ApiError extends Error {
   constructor(message, status, body) {
@@ -13,36 +14,32 @@ function baseUrl() {
   return (process.env.FLASK_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 }
 
-async function request(method, path, { body, query } = {}) {
-  const url = new URL(baseUrl() + path);
+async function request(method, endpoint, { body, query, timeout = 12000 } = {}) {
+  const url = new URL(baseUrl() + endpoint);
   Object.entries(query || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   });
-
-  let res;
+  let response;
   try {
-    res = await fetch(url, {
+    response = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': process.env.API_KEY || '' },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(8000)
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json',
+                 'X-API-Key': process.env.API_KEY || '' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeout)
     });
   } catch (err) {
-    throw new ApiError('Could not reach the API', 503);
+    throw new ApiError('Could not reach the Flask API', 503);
   }
-
-  let data = null;
-  try { data = await res.json(); } catch (err) { /* empty or non-JSON body */ }
-
-  if (!res.ok) throw new ApiError((data && data.error) || `API returned ${res.status}`, res.status, data);
+  let data;
+  try { data = await response.json(); } catch (_) { data = null; }
+  if (!response.ok) throw new ApiError(data?.message || data?.error || `Flask returned ${response.status}`, response.status, data);
   return data;
 }
 
-// Used by the dashboard footer. Never throws.
 async function health() {
   try {
-    const res = await fetch(`${baseUrl()}/health`, { signal: AbortSignal.timeout(3000) });
-    return await res.json();
+    return await request('GET', '/health', { timeout: 3000 });
   } catch (err) {
     return { status: 'unreachable' };
   }
@@ -51,6 +48,6 @@ async function health() {
 module.exports = {
   ApiError,
   health,
-  get: (path, query) => request('GET', path, { query }),
-  post: (path, body) => request('POST', path, { body })
+  get: (endpoint, query) => request('GET', endpoint, { query }),
+  post: (endpoint, body) => request('POST', endpoint, { body })
 };

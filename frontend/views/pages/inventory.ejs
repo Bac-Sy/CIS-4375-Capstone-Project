@@ -35,8 +35,10 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <% if (!items.length) { %>
-                          <tr><td colspan="9" class="empty-cell">No inventory yet.</td></tr>
+                        <% if (!dataAvailable) { %>
+                          <tr><td colspan="9" class="empty-cell">Inventory data is unavailable. Check the message above and the Flask database mapping.</td></tr>
+                        <% } else if (!items.length) { %>
+                          <tr><td colspan="9" class="empty-cell">There are no inventory records in the connected data source.</td></tr>
                         <% } %>
                         <% items.forEach(item => { %>
                           <tr>
@@ -52,10 +54,12 @@
                                 <%= fmt.number(item.quantity) %>
                               <% } %>
                             </td>
-                            <td class="num"><%= fmt.money(item.price) %></td>
-                            <td><%= item.supplier %></td>
+                            <td class="num"><%= item.price === null ? 'N/A' : fmt.money(item.price) %></td>
+                            <td><%= item.supplier || 'N/A' %></td>
                             <td>
-                              <% if (item.available) { %>
+                              <% if (item.available === null || item.available === undefined) { %>
+                                <span class="tag tag-outline">Unknown</span>
+                              <% } else if (item.available) { %>
                                 <span class="tag tag-soft">Available</span>
                               <% } else { %>
                                 <span class="tag tag-outline">Unavailable</span>

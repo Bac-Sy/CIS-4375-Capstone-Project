@@ -30,15 +30,17 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <% if (!employees.length) { %>
-                          <tr><td colspan="4" class="empty-cell">No employees yet.</td></tr>
+                        <% if (!dataAvailable) { %>
+                          <tr><td colspan="4" class="empty-cell">Employee data is unavailable. Check the message above and the Flask database mapping.</td></tr>
+                        <% } else if (!employees.length) { %>
+                          <tr><td colspan="4" class="empty-cell">No employee records in the connected data source.</td></tr>
                         <% } %>
                         <% employees.forEach(e => { %>
                           <tr>
-                            <td><strong><%= e.first_name %> <%= e.last_name %></strong></td>
+                            <td><strong><%= [e.first_name, e.last_name].filter(Boolean).join(' ') || e.name || e.username || 'N/A' %></strong></td>
                             <td><%= e.username %></td>
-                            <td><%= e.email %></td>
-                            <td><span class="tag tag-soft"><%= e.role %></span></td>
+                            <td><%= e.email || 'N/A' %></td>
+                            <td><span class="tag tag-soft"><%= e.role || 'N/A' %></span></td>
                           </tr>
                         <% }) %>
                       </tbody>
