@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <%- include('../template/head', { title: 'Add product' }) %>
+</head>
+<body>
+<div class="app">
+  <%- include('../template/nav', { active: 'manage' }) %>
+  <main class="content">
+    <%- include('../template/topbar') %>
+    <%- include('../template/messages') %>
+    <header class="page-header">
+      <h1>Add a new product</h1>
+    </header>
+    <section class="panel form-panel">
+      <form action="/create/product" method="POST"
+            data-confirm="Add this product to the catalogue?"
+            data-confirm-button="Add product">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+        <div class="mb-3">
+          <label for="Name" class="form-label">Name</label>
+          <input type="text" class="form-control" id="Name" name="Name"
+                 maxlength="100" autocomplete="off" required>
+        </div>
+
+        <div class="mb-3">
+          <label for="Category_ID" class="form-label">Category</label>
+          <select class="form-select" id="Category_ID" name="Category_ID" required>
+            <option value="" disabled selected>Select a category</option>
+            <% categories.forEach(function(c) { %>
+              <option value="<%= c.Category_ID %>"><%= c.Category %></option>
+            <% }); %>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label for="Supplier_ID" class="form-label">Supplier</label>
+          <select class="form-select" id="Supplier_ID" name="Supplier_ID" required>
+            <option value="" disabled selected>Select a supplier</option>
+            <% suppliers.forEach(function(s) { %>
+              <option value="<%= s.Supplier_ID %>"><%= s.Name %></option>
+            <% }); %>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label for="Availability" class="form-label">Availability</label>
+          <select class="form-select" id="Availability" name="Availability" required>
+            <option value="1" selected>Available</option>
+            <option value="0">Not available</option>
+          </select>
+        </div>
+
+        <% if (!categories.length || !suppliers.length) { %>
+          <p class="form-error" role="alert">At least one category and one supplier must exist before you can add a product.</p>
+        <% } %>
+
+        <button type="submit" class="btn btn-primary" <%= !categories.length || !suppliers.length ? 'disabled' : '' %>>Add product</button>
+        <a href="/manage" class="btn btn-outline-secondary">Cancel</a>
+      </form>
+    </section>
+    <%- include('../template/footer') %>
+  </main>
+</div>
+<%- include('../template/scripts') %>
+<%- include('../template/confirm') %>
+</body>
+</html>

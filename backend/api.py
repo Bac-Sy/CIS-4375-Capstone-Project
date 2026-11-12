@@ -1,6 +1,6 @@
 import os
 import flask
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 
 # importing database credentials
@@ -9,6 +9,8 @@ from sql import DBconnection, execute_read_query, execute_update_query
 
 # needed for password hashing
 from argon2 import PasswordHasher, exceptions
+from security import auth_secret, issue_token, install_auth
+from reporting import register_reporting_routes
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -122,7 +124,9 @@ def delete_supplier(supplier_id):
     if products:
         mycon.close()
         return jsonify({"message": "This supplier has products and can't be deleted."}), 409
-    execute_update_query(mycon, "DELETE FROM Supplier WHERE Supplier_ID=%s", (supplier_id,))
+    error = run_write(mycon, "DELETE FROM Supplier WHERE Supplier_ID=%s", (supplier_id,))
+    if error:
+        return db_error_response(mycon, error)
     mycon.close()
     return jsonify({"message": "Supplier deleted!"}), 200
 
@@ -183,7 +187,9 @@ def delete_category(category_id):
     if products:
         mycon.close()
         return jsonify({"message": "This category has products and can't be deleted."}), 409
-    execute_update_query(mycon, "DELETE FROM Category WHERE Category_ID=%s", (category_id,))
+    error = run_write(mycon, "DELETE FROM Category WHERE Category_ID=%s", (category_id,))
+    if error:
+        return db_error_response(mycon, error)
     mycon.close()
     return jsonify({"message": "Category deleted!"}), 200
 
@@ -214,40 +220,35 @@ def employeeInformation():
 
 
 #Create (Add a new employee to the database)
-@app.route('/add/employee',methods=['POST'])
+@app.route('/add/employee', methods=['POST'])
 def addEmployee():
-        mycon = get_connection()
-        userinput = request.get_json()
-        firstName = userinput['First_Name']
-        lastName = userinput['Last_Name']
-        role = userinput['Role']
-        username = userinput['Username']
-        email = userinput['Email']
-        password= userinput['Password']
-
-        
-        sql = "select Email from Employee where Email = '%s' " % (email)
-        sql2 = "select Username from Employee where Username = '%s'" % (username)
-
-        storedEmail = execute_read_query(mycon,sql)
-        storedUsername = execute_read_query(mycon,sql2)
-
-        #check to make sure the email and username are unique to the DB
-        if storedEmail:
-            mycon.close()
-            return jsonify({'message' : 'An account with this email already exists. Try a different email address.'}), 409
-        elif storedUsername:
-            mycon.close()
-            return jsonify ({'message': 'An account with that username already exists. Try a different username.'}), 409
-        else: 
-            #password hashing below
-            ph = PasswordHasher()
-            hashedPassword = ph.hash(password)
-            #inserting new employee
-            sql = "insert into Employee (First_Name, Last_Name, Role, Username, Email, Password_Hash) Values ('%s','%s','%s','%s','%s','%s')" % (firstName, lastName, role, username, email,hashedPassword )
-            execute_update_query(mycon,sql)
-            mycon.close()
-            return jsonify({'message': 'Employee successfully added to the system.'}), 201
+    data = request.get_json(silent=True) or {}
+    required = ('First_Name', 'Last_Name', 'Role', 'Username', 'Email', 'Password')
+    if any(not str(data.get(key) or '').strip() for key in required):
+        return jsonify({'message': 'All employee fields are required.'}), 400
+    if data['Role'] not in ('Manager', 'Employee'):
+        return jsonify({'message': 'Invalid employee role.'}), 400
+    if len(data['Password']) < 8:
+        return jsonify({'message': 'Password must have at least 8 characters.'}), 400
+    con = get_connection()
+    if con is None:
+        return jsonify({'message': 'Database unavailable.'}), 503
+    try:
+        if execute_read_query(con, 'SELECT Employee_ID FROM Employee WHERE Email=%s', (data['Email'],)):
+            return jsonify({'message': 'An account with this email already exists.'}), 409
+        if execute_read_query(con, 'SELECT Employee_ID FROM Employee WHERE Username=%s', (data['Username'],)):
+            return jsonify({'message': 'An account with this username already exists.'}), 409
+        hashed = PasswordHasher().hash(data['Password'])
+        error = run_write(con,
+            'INSERT INTO Employee (First_Name, Last_Name, Role, Username, Email, Password_Hash) '
+            'VALUES (%s, %s, %s, %s, %s, %s)',
+            (data['First_Name'], data['Last_Name'], data['Role'],
+             data['Username'], data['Email'], hashed))
+        if error:
+            return jsonify({'message': 'Employee could not be created. Check unique fields.'}), 409
+        return jsonify({'message': 'Employee successfully added to the system.'}), 201
+    finally:
+        con.close()
 
 #Update
 @app.route('/update/employee', methods=['PUT'])
@@ -321,46 +322,65 @@ def deleteEmployee():
     return jsonify({'message' : 'Employee deleted from the system.'})
 # Below is the API for the login system
 @app.route('/login', methods=['POST'])
+@app.route('/auth/login', methods=['POST'])
 def login():
-    mycon = get_connection()
-    userinput = request.get_json()
-    username = userinput['Username']
-    password = userinput['Password']
-
-    #This part verifies that the username is in the system. If it is, it pulls the other value's in the Employee table that belong to that user 
-    sql = "select Email, Password_Hash, First_Name, Last_Name, Role, Username, Employee_ID from Employee where Username = '%s'" % (username)
-    results = execute_read_query(mycon,sql)
-    mycon.close()
-    if not results:
-        return jsonify({'message' : 'Username not found, try again'}), 404
-    #These stored values can be used in the node server for session management. The values get sent back in the return statement and get saved in the session store. 
-    storedEmail = results[0]['Email']
-    storedPasswordHash = results[0]['Password_Hash']
-    storedFirstName = results[0]['First_Name']
-    storedLastName = results[0]['Last_Name']
-    storedRole = results[0]['Role']
-    storedUsername = results[0]['Username']
-    storedEmployeeID = results[0]['Employee_ID']
-
-    ph = PasswordHasher()
-
-# The funtion verifies if the password matches the hash. The username and password combination must match, or the login fails.
+    # Support both the original form (Username/Password) and the newer
+    # client (username/password). Always bind input as SQL parameters.
+    data = request.get_json(silent=True) or {}
+    username = str(data.get('Username') or data.get('username') or '').strip()
+    password = data.get('Password') or data.get('password') or ''
+    if not username or not password:
+        return jsonify({'message': 'Username and password are required.'}), 400
+    if not auth_secret():
+        return jsonify({'message': 'AUTH_TOKEN_SECRET is missing from the backend environment.'}), 503
+    con = get_connection()
+    if con is None:
+        return jsonify({'message': 'Database unavailable.'}), 503
     try:
-        if (ph.verify(storedPasswordHash, password)):
-            return jsonify({
-                    "message" : "Login Successful.",
-                    "Email" : storedEmail,
-                    "First_Name" : storedFirstName,
-                    "Last_Name" : storedLastName,
-                    "Role" : storedRole,
-                    "Username" : storedUsername,
-                    "Employee_ID" : storedEmployeeID
-            }), 200
-        
-    except exceptions.VerificationError: 
-        return jsonify({'message':'Invalid password.' }), 401
-    except Exception as e:
-        return jsonify({'message' : 'An error occurred'}), 500
+        rows = execute_read_query(con,
+            'SELECT Employee_ID, First_Name, Last_Name, Role, Username, Email, Password_Hash '
+            'FROM Employee WHERE Username=%s', (username,))
+    finally:
+        con.close()
+    if rows is None:
+        return jsonify({'message': 'Database login query failed.'}), 503
+    if not rows:
+        return jsonify({'message': 'Incorrect username or password.'}), 401
+    employee = rows[0]
+    try:
+        PasswordHasher().verify(employee['Password_Hash'], password)
+    except exceptions.VerificationError:
+        return jsonify({'message': 'Incorrect username or password.'}), 401
+    except Exception:
+        app.logger.exception('Password verification error')
+        return jsonify({'message': 'Unable to verify credentials.'}), 503
+    token = issue_token(employee['Employee_ID'])
+    user = {
+        'id': str(employee['Employee_ID']),
+        'firstName': employee['First_Name'],
+        'lastName': employee['Last_Name'],
+        'name': f"{employee['First_Name']} {employee['Last_Name']}",
+        'username': employee['Username'],
+        'email': employee['Email'],
+        'role': employee['Role']
+    }
+    # Keep legacy names for the original server and modern shapes for
+    # the newer EJS client. Never send the password hash to Express.
+    return jsonify({
+        'message': 'Login successful.', 'token': token,
+        'Employee_ID': employee['Employee_ID'],
+        'First_Name': employee['First_Name'],
+        'Last_Name': employee['Last_Name'],
+        'Email': employee['Email'],
+        'Username': employee['Username'],
+        'Role': employee['Role'],
+        'user': user,
+        'employee': {
+            'id': user['id'], 'first_name': user['firstName'],
+            'last_name': user['lastName'], 'username': user['username'],
+            'email': user['email'], 'role': user['role']
+        }
+    }), 200
 
 #Below is the CRUD for the Invoice table.
 #Read (The api to read a single entry in the Invoice table)
@@ -543,60 +563,54 @@ def deleteInvoice():
 #This replaces editing the Inventory table directly, so every stock change has an invoice behind it.
 @app.route('/adjust/inventory', methods=['PUT'])
 def adjustInventory():
-    mycon = get_connection()
-    userinput = request.get_json()
-    variantID = userinput.get('Variant_ID')
-    newQuantity = userinput.get('New_Quantity')
-    employeeID = userinput.get('Employee_ID')
-
-    if not variantID or newQuantity is None or not employeeID:
-        mycon.close()
-        return jsonify({'message' : 'Variant_ID, New_Quantity, and Employee_ID are required.'}), 400
-
-    newQuantity = int(newQuantity)
-    if newQuantity < 0:
-        mycon.close()
-        return jsonify({'message' : 'New_Quantity cannot be below 0.'}), 400
-
-    #pulls the current stock so the difference can be worked out
-    sql = "select Quantity from Inventory where Variant_ID = '%s'" % (variantID)
-    stock = execute_read_query(mycon,sql)
-    if not stock:
-        mycon.close()
-        return jsonify({'message' : 'No inventory record for that variant'}), 404
-
-    #checks that the employee exists
-    sql1 = "select Employee_ID from Employee where Employee_ID = '%s'" % (employeeID)
-    employee = execute_read_query(mycon,sql1)
-    if not employee:
-        mycon.close()
-        return jsonify({'message' : 'Employee does not exist. Try another ID.'}), 404
-
-    #looks up the Adjustment type by name, since its ID is different on each database
-    sql2 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type = 'Adjustment'"
-    adjustment = execute_read_query(mycon,sql2)
-    if not adjustment:
-        mycon.close()
-        return jsonify({'message' : 'The Adjustment transaction type is missing from the database.'}), 500
-
-    currentStock = stock[0]['Quantity']
-    difference = newQuantity - currentStock
-    adjustmentID = adjustment[0]['Transaction_Type_ID']
-
-    #if the count matches the stock already in the system, there is nothing to record
-    if difference == 0:
-        mycon.close()
-        return jsonify({'message' : 'Stock is already %s. No changes made.' % (currentStock)})
-
-    #records the change as an Adjustment invoice and sets the stock to the new quantity
-    sql3 = "insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values ('%s', '%s', CURDATE(), '%s', '%s')" % (adjustmentID, difference, variantID, employeeID)
-    execute_update_query(mycon,sql3)
-    sql4 = "update Inventory set Quantity = '%s' where Variant_ID = '%s'" % (newQuantity, variantID)
-    execute_update_query(mycon,sql4)
-
-    mycon.close()
-    return jsonify({'message' : 'Stock updated from %s to %s.' % (currentStock, newQuantity)})
-
+    data = request.get_json(silent=True) or {}
+    try:
+        variant_id = int(data.get('Variant_ID'))
+        new_quantity = int(data.get('New_Quantity'))
+    except (ValueError, TypeError):
+        return jsonify({'message': 'Variant_ID and New_Quantity must be integers.'}), 400
+    if variant_id < 1 or new_quantity < 0:
+        return jsonify({'message': 'Variant_ID must be positive and New_Quantity cannot be negative.'}), 400
+    employee_id = int(g.employee['Employee_ID'])
+    supplied_id = data.get('Employee_ID')
+    if supplied_id is not None and str(supplied_id) != str(employee_id):
+        return jsonify({'message': 'Employee_ID must match the signed-in account.'}), 403
+    con = get_connection()
+    if con is None:
+        return jsonify({'message': 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = con.cursor(dictionary=True)
+        cursor.execute('SELECT Quantity FROM Inventory WHERE Variant_ID=%s FOR UPDATE', (variant_id,))
+        stock = cursor.fetchone()
+        if stock is None:
+            con.rollback()
+            return jsonify({'message': 'No inventory record for that variant.'}), 404
+        current = int(stock['Quantity'])
+        difference = new_quantity - current
+        if difference == 0:
+            con.rollback()
+            return jsonify({'message': f'Stock is already {current}. No changes made.'}), 200
+        cursor.execute('SELECT Transaction_Type_ID FROM Transaction_Type WHERE Transaction_Type=%s', ('Adjustment',))
+        adjustment = cursor.fetchone()
+        if adjustment is None:
+            con.rollback()
+            return jsonify({'message': 'Adjustment transaction type is missing.'}), 503
+        cursor.execute("""INSERT INTO Invoice
+            (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID)
+            VALUES (%s, %s, CURDATE(), %s, %s)""",
+            (adjustment['Transaction_Type_ID'], difference, variant_id, employee_id))
+        cursor.execute('UPDATE Inventory SET Quantity=%s WHERE Variant_ID=%s', (new_quantity, variant_id))
+        con.commit()
+        return jsonify({'message': f'Stock updated from {current} to {new_quantity}.'}), 200
+    except Exception:
+        con.rollback()
+        app.logger.exception('Inventory adjustment failed')
+        return jsonify({'message': 'Stock adjustment failed. Nothing was committed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
+        con.close()
 
 #Below is the CRUD for the Color table
 #Read (pulls all of the colors, used for the color dropdown)
@@ -940,7 +954,9 @@ def delete_location(location_id):
     if variants:
         mycon.close()
         return jsonify({"message": "This location has product variants and can't be deleted."}), 409
-    execute_update_query(mycon, "DELETE FROM Location WHERE Location_ID=%s", (location_id,))
+    error = run_write(mycon, "DELETE FROM Location WHERE Location_ID=%s", (location_id,))
+    if error:
+        return db_error_response(mycon, error)
     mycon.close()
     return jsonify({"message": "Location deleted!"}), 200
 
@@ -1007,7 +1023,9 @@ def delete_product(product_id):
     if variants:
         mycon.close()
         return jsonify({"message": "This product has variants and can't be deleted."}), 409
-    execute_update_query(mycon, "DELETE FROM Product WHERE Product_ID=%s", (product_id,))
+    error = run_write(mycon, "DELETE FROM Product WHERE Product_ID=%s", (product_id,))
+    if error:
+        return db_error_response(mycon, error)
     mycon.close()
     return jsonify({"message": "Product deleted!"}), 200
 
@@ -1059,7 +1077,9 @@ def delete_product_variant(variant_id):
     if inventory or invoices:
         mycon.close()
         return jsonify({"message": "This variant has inventory or invoices and can't be deleted."}), 409
-    execute_update_query(mycon, "DELETE FROM Product_Variant WHERE Variant_ID=%s", (variant_id,))
+    error = run_write(mycon, "DELETE FROM Product_Variant WHERE Variant_ID=%s", (variant_id,))
+    if error:
+        return db_error_response(mycon, error)
     mycon.close()
     return jsonify({"message": "Product Variant deleted!"}), 200
 
@@ -1098,10 +1118,16 @@ def add_inventory():
 @app.route('/api/inventory/<int:inventory_id>', methods=['DELETE'])
 def delete_inventory(inventory_id):
     mycon = get_connection()
-    execute_update_query(mycon, "DELETE FROM Inventory WHERE Inventory_ID=%s", (inventory_id,))
+    error = run_write(mycon, "DELETE FROM Inventory WHERE Inventory_ID=%s", (inventory_id,))
+    if error:
+        return db_error_response(mycon, error)
     mycon.close()
     return jsonify({"message": "Inventory record deleted!"}), 200
 
+
+# Add reporting endpoints, then protect all routes except health/login.
+register_reporting_routes(app, get_db_connection, execute_read_query)
+install_auth(app, get_db_connection, execute_read_query)
 
 # --- START THE API ---
 if __name__ == '__main__':

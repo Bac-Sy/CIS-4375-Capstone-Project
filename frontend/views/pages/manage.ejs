@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head><%- include('../template/head', { title: 'Manage Catalogue' }) %></head>
+<body>
+<div class="app">
+  <%- include('../template/nav', { active: 'manage' }) %>
+  <main class="content">
+    <%- include('../template/topbar') %>
+    <%- include('../template/messages') %>
+    <header class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+      <h1>Manage Catalogue</h1>
+      <a href="/new/product" class="scc-btn" style="margin-top:0;">+ Add Product</a>
+    </header>
+    <p class="empty" style="margin-bottom:1rem">Choose a record to open its edit screen. Changes and deletions require confirmation.</p>
+    <% const groups = [
+      { label:'Products', items:products, key:'Product_ID', text:'Name', path:'products' },
+      { label:'Product variants', items:variants, key:'Variant_ID', text:'Variant_ID', path:'variants' },
+      { label:'Suppliers', items:suppliers, key:'Supplier_ID', text:'Name', path:'suppliers' },
+      { label:'Categories', items:categories, key:'Category_ID', text:'Category', path:'categories' },
+      { label:'Locations', items:locations, key:'Location_ID', text:'Location_Name', path:'locations' }
+    ]; %>
+    <div class="dashboard-grid" aria-label="Catalog records">
+      <% groups.forEach(group => { %>
+      <section class="panel">
+        <div class="panel-bar"><strong><%= group.label %></strong> (<%= group.items.length %>)</div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th scope="col">Record</th><th scope="col">Action</th></tr></thead>
+            <tbody>
+              <% if (!group.items.length) { %>
+                <tr><td colspan="2" class="empty-cell">No records available</td></tr>
+              <% } %>
+              <% group.items.forEach(item => { %>
+                <tr>
+                  <td><%= item[group.text] || '#' + item[group.key] %></td>
+                  <td><a href="/<%= group.path %>/<%= item[group.key] %>/edit">Edit</a></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <% }); %>
+    </div>
+    <%- include('../template/footer') %>
+  </main>
+</div>
+<%- include('../template/scripts') %>
+</body>
+</html>

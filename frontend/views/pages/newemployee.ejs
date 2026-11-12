@@ -1,23 +1,24 @@
 <!doctype html>
 <html lang="en">
 <head>
-<%- include('../template/head', { title: 'New employee' }); %>
+<%- include('../template/head', { title: 'New employee' }) %>
 </head>
 
 <body>
 <div class="app">
-<%- include('../template/nav', { active: 'newemployee' }); %>
+<%- include('../template/nav', { active: 'newemployee' }) %>
 <main class="content">
-<%- include('../template/topbar'); %>
+<%- include('../template/topbar') %>
 <header class="page-header">
 <h1>Add a new employee</h1>
 </header>
 <section class="panel form-panel">
 
-<%- include('../template/messages'); %>
+<%- include('../template/messages') %>
 
 <!-- The form posts to /create/employee. The input names must match what the add employee API expects. -->
 <form action="/create/employee" method="POST">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 <div class="mb-3">
 <label for="First_Name" class="form-label">First name</label>
 <input type="text" class="form-control" id="First_Name" name="First_Name" maxlength="50" required>
@@ -55,9 +56,9 @@
 <a href="/" class="btn btn-outline-secondary">Cancel</a>
 </form>
 </section>
-<%- include('../template/footer'); %>
+<%- include('../template/footer') %>
 </main>
 </div>
-<%- include('../template/scripts'); %>
+<%- include('../template/scripts') %>
 </body>
 </html>

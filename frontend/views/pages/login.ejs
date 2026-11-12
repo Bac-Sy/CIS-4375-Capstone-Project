@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
     <head>
-        <%- include('../template/head', { title: 'Log in' }); %>
+        <%- include('../template/head', { title: 'Log in' }) %>
     </head>
 
     <body class="auth-body">
@@ -13,6 +13,7 @@
             <% } %>
             <!-- The form posts to /process/login. The input names (Username, Password) must stay the same for the login to work. -->
             <form action="/process/login" method="POST" class="auth-form">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
               <label for="Username">Username</label>
               <input type="text" id="Username" name="Username" autocomplete="username" required autofocus>
 
@@ -23,6 +24,6 @@
             </form>
             <p class="auth-brand"><a href="/">Back to dashboard</a></p>
         </main>
-        <%- include('../template/scripts'); %>
+        <%- include('../template/scripts') %>
     </body>
 </html>

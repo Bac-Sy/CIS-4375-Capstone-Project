@@ -1,20 +1,20 @@
 <%
   // Items at or below this count are highlighted in red.
-  const lowStockThreshold = 5;
+  const lowStockThreshold = (typeof threshold !== 'undefined' && Number.isFinite(Number(threshold))) ? Number(threshold) : 5;
 %>
 <!doctype html>
 <html lang="en">
     <head>
-        <%- include('../template/head', { title: 'Inventory' }); %>
+        <%- include('../template/head', { title: 'Inventory' }) %>
     </head>
 
     <body>
         <div class="app">
-            <%- include('../template/nav', { active: 'inventory' }); %>
+            <%- include('../template/nav', { active: 'inventory' }) %>
 
             <main class="content">
-                <%- include('../template/topbar'); %>
-                <%- include('../template/messages'); %>
+                <%- include('../template/topbar') %>
+                <%- include('../template/messages') %>
 
                 <header class="page-header">
                   <h1>Inventory</h1>
@@ -41,7 +41,15 @@
                         <% } %>
                         <% rows.forEach(function(row) { %>
                           <tr>
-                            <td><strong><%= row.Product %></strong></td>
+                            <td>
+                              <strong><%= row.Product %></strong>
+                              <% if (authenticated && row.Product_ID != null) { %>
+                                <div><a href="/products/<%= row.Product_ID %>/edit">Edit product</a></div>
+                              <% } %>
+                              <% if (authenticated && row.Variant_ID != null) { %>
+                                <div><a href="/variants/<%= row.Variant_ID %>/edit">Edit variant</a></div>
+                              <% } %>
+                            </td>
                             <td><%= row.Size %></td>
                             <td><%= row.Color %></td>
                             <td><%= row.Location || 'Unassigned' %></td>
@@ -59,7 +67,8 @@
                                 <input type="number" class="form-control" name="New_Quantity" value="<%= row.Quantity %>"
                                        min="0" step="1" required aria-label="New stock count for <%= row.Product %>">
                                 <button type="submit" class="scc-btn">Save</button>
-                              </form>
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+</form>
                             </td>
                           </tr>
                         <% }); %>
@@ -68,10 +77,10 @@
                   </div>
                 </section>
 
-                <%- include('../template/footer'); %>
+                <%- include('../template/footer') %>
             </main>
         </div>
-        <%- include('../template/scripts'); %>
-        <%- include('../template/confirm'); %>
+        <%- include('../template/scripts') %>
+        <%- include('../template/confirm') %>
     </body>
 </html>

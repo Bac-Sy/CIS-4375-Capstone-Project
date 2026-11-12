@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="en">
 <head>
-<%- include('../template/head', { title: 'Edit supplier' }); %>
+<%- include('../template/head', { title: 'Edit supplier' }) %>
 </head>
 
 <body>
 <div class="app">
-<%- include('../template/nav', { active: 'none' }); %>
+<%- include('../template/nav', { active: 'none' }) %>
 <main class="content">
-<%- include('../template/topbar'); %>
+<%- include('../template/topbar') %>
 <header class="page-header">
 <h1>Edit supplier #<%= supplier.Supplier_ID %></h1>
 </header>
@@ -37,6 +37,7 @@ value="<%= supplier.Phone %>" maxlength="20">
 
 <button type="submit" class="btn btn-primary">Save changes</button>
 <a href="/" class="btn btn-outline-secondary">Cancel</a>
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 </form>
 
 <hr class="my-4">
@@ -44,12 +45,13 @@ value="<%= supplier.Phone %>" maxlength="20">
 data-confirm="Delete <%= supplier.Name %>? This can't be undone."
 data-confirm-button="Delete">
 <button type="submit" class="btn btn-outline-danger">Delete supplier</button>
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 </form>
 </section>
-<%- include('../template/footer'); %>
+<%- include('../template/footer') %>
 </main>
 </div>
-<%- include('../template/scripts'); %>
-<%- include('../template/confirm'); %>
+<%- include('../template/scripts') %>
+<%- include('../template/confirm') %>
 </body>
 </html>
