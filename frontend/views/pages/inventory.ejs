@@ -1,58 +1,86 @@
+<%
+  // Items at or below this count are highlighted in red.
+  const lowStockThreshold = (typeof threshold !== 'undefined' && Number.isFinite(Number(threshold))) ? Number(threshold) : 5;
+%>
 <!doctype html>
 <html lang="en">
-<head>
-<%- include('../template/head', { title: 'Inventory' }); %>
-</head>
+    <head>
+        <%- include('../template/head', { title: 'Inventory' }) %>
+    </head>
 
-<body>
-<%- include('../template/nav'); %>
-<main>
-<%- include('../template/messages'); %>
-<div class="container">
-<h2 class="mb-4">Inventory</h2>
+    <body>
+        <div class="app">
+            <%- include('../template/nav', { active: 'inventory' }) %>
 
-<% if (rows.length === 0) { %>
-<p>No inventory records yet.</p>
-<% } else { %>
-<div class="table-responsive">
-<table class="table table-striped align-middle">
-<thead>
-<tr>
-<th>Product</th>
-<th>Size</th>
-<th>Color</th>
-<th>Location</th>
-<th>In stock</th>
-<th>Adjust stock</th>
-</tr>
-</thead>
-<tbody>
-<% rows.forEach(function(row) { %>
-<tr>
-<td><%= row.Product %></td>
-<td><%= row.Size %></td>
-<td><%= row.Color %></td>
-<td><%= row.Location %></td>
-<td><%= row.Quantity %></td>
-<td>
-<form action="/inventory/<%= row.Variant_ID %>/adjust" method="POST" class="d-flex gap-2"
-data-confirm="Set the stock for <%= row.Product %> (<%= row.Size %>, <%= row.Color %>) to the new count?"
-data-confirm-button="Update stock">
-<input type="number" class="form-control" name="New_Quantity" value="<%= row.Quantity %>"
-min="0" step="1" required style="max-width: 100px;" aria-label="New stock count">
-<button type="submit" class="btn btn-primary">Save</button>
+            <main class="content">
+                <%- include('../template/topbar') %>
+                <%- include('../template/messages') %>
+
+                <header class="page-header">
+                  <h1>Inventory</h1>
+                </header>
+
+                <section class="panel">
+                  <div class="panel-bar"><%= rows.length %> <%= rows.length === 1 ? 'item' : 'items' %></div>
+                  <div class="table-scroll">
+                    <table class="data-table">
+                      <caption class="visually-hidden">Inventory by product variant</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Product</th>
+                          <th scope="col">Size</th>
+                          <th scope="col">Color</th>
+                          <th scope="col">Location</th>
+                          <th scope="col" class="num">In stock</th>
+                          <th scope="col">Adjust stock</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <% if (rows.length === 0) { %>
+                          <tr><td colspan="6" class="empty-cell">No inventory records yet.</td></tr>
+                        <% } %>
+                        <% rows.forEach(function(row) { %>
+                          <tr>
+                            <td>
+                              <strong><%= row.Product %></strong>
+                              <% if (authenticated && row.Product_ID != null) { %>
+                                <div><a href="/products/<%= row.Product_ID %>/edit">Edit product</a></div>
+                              <% } %>
+                              <% if (authenticated && row.Variant_ID != null) { %>
+                                <div><a href="/variants/<%= row.Variant_ID %>/edit">Edit variant</a></div>
+                              <% } %>
+                            </td>
+                            <td><%= row.Size %></td>
+                            <td><%= row.Color %></td>
+                            <td><%= row.Location || 'Unassigned' %></td>
+                            <td class="num">
+                              <% if (Number(row.Quantity) <= lowStockThreshold) { %>
+                                <span class="tag tag-red"><%= row.Quantity %></span>
+                              <% } else { %>
+                                <%= row.Quantity %>
+                              <% } %>
+                            </td>
+                            <td>
+                              <form action="/inventory/<%= row.Variant_ID %>/adjust" method="POST" class="inline-form"
+                                    data-confirm="Set the stock for <%= row.Product %> (<%= row.Size %>, <%= row.Color %>) to the new count?"
+                                    data-confirm-button="Update stock">
+                                <input type="number" class="form-control" name="New_Quantity" value="<%= row.Quantity %>"
+                                       min="0" step="1" required aria-label="New stock count for <%= row.Product %>">
+                                <button type="submit" class="scc-btn">Save</button>
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 </form>
-</td>
-</tr>
-<% }); %>
-</tbody>
-</table>
-</div>
-<% } %>
-</div>
-</main>
-<%- include('../template/footer'); %>
-<%- include('../template/scripts'); %>
-<%- include('../template/confirm'); %>
-</body>
+                            </td>
+                          </tr>
+                        <% }); %>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <%- include('../template/footer') %>
+            </main>
+        </div>
+        <%- include('../template/scripts') %>
+        <%- include('../template/confirm') %>
+    </body>
 </html>

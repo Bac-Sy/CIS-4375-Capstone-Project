@@ -1,14 +1,19 @@
 <!doctype html>
 <html lang="en">
 <head>
-<%- include('../template/head', { title: 'Edit location' }); %>
+<%- include('../template/head', { title: 'Edit location' }) %>
 </head>
 
 <body>
-<%- include('../template/nav'); %>
-<main>
-<div class="container" style="max-width: 600px;">
-<h2 class="mb-4">Edit location #<%= location.Location_ID %></h2>
+<div class="app">
+<%- include('../template/nav', { active: 'none' }) %>
+<main class="content">
+<%- include('../template/topbar') %>
+<%- include('../template/messages') %>
+<header class="page-header">
+<h1>Edit location #<%= location.Location_ID %></h1>
+</header>
+<section class="panel form-panel">
 
 <form action="/locations/<%= location.Location_ID %>/edit" method="POST"
 data-confirm="Save changes to <%= location.Location_Name %>?"
@@ -21,6 +26,7 @@ value="<%= location.Location_Name %>" required>
 
 <button type="submit" class="btn btn-primary">Save changes</button>
 <a href="/" class="btn btn-outline-secondary">Cancel</a>
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 </form>
 
 <hr class="my-4">
@@ -28,11 +34,13 @@ value="<%= location.Location_Name %>" required>
 data-confirm="Delete <%= location.Location_Name %>? This can't be undone."
 data-confirm-button="Delete">
 <button type="submit" class="btn btn-outline-danger">Delete location</button>
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 </form>
-</div>
+</section>
+<%- include('../template/footer') %>
 </main>
-<%- include('../template/footer'); %>
-<%- include('../template/scripts'); %>
-<%- include('../template/confirm'); %>
+</div>
+<%- include('../template/scripts') %>
+<%- include('../template/confirm') %>
 </body>
 </html>

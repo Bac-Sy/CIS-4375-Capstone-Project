@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <%- include('../template/head', { title: 'Employees' }); %>
+    </head>
+
+    <body>
+        <div class="app">
+            <%- include('../template/nav', { active: 'employees' }); %>
+
+            <main class="content">
+                <%- include('../template/topbar'); %>
+                <%- include('../template/messages'); %>
+
+                <header class="page-header">
+                  <h1>Employees</h1>
+                </header>
+
+                <section class="panel">
+                  <div class="panel-bar"><%= fmt.number(employees.length) %> <%= employees.length === 1 ? 'employee' : 'employees' %></div>
+                  <div class="table-scroll">
+                    <table class="data-table">
+                      <caption class="visually-hidden">Employees</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Name</th>
+                          <th scope="col">Username</th>
+                          <th scope="col">Email</th>
+                          <th scope="col">Role</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <% if (!dataAvailable) { %>
+                          <tr><td colspan="4" class="empty-cell">Employee data is unavailable. Check the message above and the Flask database mapping.</td></tr>
+                        <% } else if (!employees.length) { %>
+                          <tr><td colspan="4" class="empty-cell">No employee records in the connected data source.</td></tr>
+                        <% } %>
+                        <% employees.forEach(e => { %>
+                          <tr>
+                            <td><strong><%= [e.first_name, e.last_name].filter(Boolean).join(' ') || e.name || e.username || 'N/A' %></strong></td>
+                            <td><%= e.username %></td>
+                            <td><%= e.email || 'N/A' %></td>
+                            <td><span class="tag tag-soft"><%= e.role || 'N/A' %></span></td>
+                          </tr>
+                        <% }) %>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <%- include('../template/footer'); %>
+            </main>
+        </div>
+        <%- include('../template/scripts'); %>
+    </body>
+</html>

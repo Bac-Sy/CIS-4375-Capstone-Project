@@ -1,15 +1,247 @@
-<!doctype html>
-<html lang="en">
-    <head>
-        <%- include('../template/head', { title: 'Home' }); %>
-    </head>
+<%
+  const dashboardData = (typeof data !== 'undefined' && data && typeof data === 'object')
+    ? data : {};
+  const dashboardUser = (typeof user !== 'undefined' && user && typeof user === 'object')
+    ? user : {};
 
-    <body class="text-center">
-        <%- include('../template/nav'); %>
-        <main>
-            <%- include('../template/messages'); %>
-        </main>
-        <%- include('../template/footer'); %>
-        <%- include('../template/scripts'); %>
-    </body>
+  const salesAvailable = Boolean(dashboardData.sales && typeof dashboardData.sales === 'object');
+  const salesInput = salesAvailable ? dashboardData.sales : {};
+  const sales = {
+    revenue: salesInput.revenue === null || salesInput.revenue === undefined
+      ? null : (Number(salesInput.revenue) || 0),
+    units: salesInput.units === null || salesInput.units === undefined
+      ? null : (Number(salesInput.units) || 0),
+    days: Number(salesInput.days) > 0 ? Number(salesInput.days) : 30
+  };
+
+  const ordersAvailable = Array.isArray(dashboardData.recent_orders);
+  const recentOrders = ordersAvailable
+    ? dashboardData.recent_orders.filter(o => o && typeof o === 'object') : [];
+
+  const stockAvailable = Array.isArray(dashboardData.low_stock);
+  const lowStock = stockAvailable
+    ? dashboardData.low_stock.filter(item => item && typeof item === 'object') : [];
+  const threshold = Number(dashboardData.low_stock_threshold) > 0
+    ? Number(dashboardData.low_stock_threshold) : 5;
+
+  // Support either values passed separately by Express or values under data.
+  const donutSource = (typeof donut !== 'undefined' && donut && typeof donut === 'object')
+    ? donut : (dashboardData.donut || dashboardData.sales_donut || salesInput.donut || {});
+  const segments = Array.isArray(donutSource.segments) ? donutSource.segments : [];
+  const hasDonut = segments.length > 0;
+
+  const trendSource = (typeof trend !== 'undefined' && trend && typeof trend === 'object')
+    ? trend : (dashboardData.trend || dashboardData.inventory_trend || {});
+  const hasTrend = Boolean(trendSource.first && trendSource.last);
+
+  // server.js does not currently supply fmt; use safe built-in formatters.
+  const providedFmt = (typeof fmt !== 'undefined' && fmt && typeof fmt === 'object')
+    ? fmt : {};
+  const displayFmt = {
+    money(value) {
+      if (typeof providedFmt.money === 'function') return providedFmt.money(value);
+      const n = Number(value);
+      return Number.isFinite(n)
+        ? n.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 'N/A';
+    },
+    number(value) {
+      if (typeof providedFmt.number === 'function') return providedFmt.number(value);
+      const n = Number(value);
+      return Number.isFinite(n) ? n.toLocaleString('en-US') : 'N/A';
+    },
+    date(value) {
+      if (typeof providedFmt.date === 'function') return providedFmt.date(value);
+      if (!value) return 'N/A';
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? 'N/A' : d.toLocaleDateString('en-US');
+    },
+    signed(value) {
+      if (typeof providedFmt.signed === 'function') return providedFmt.signed(value);
+      const n = Number(value);
+      return Number.isFinite(n) ? `${n > 0 ? '+' : ''}${n.toLocaleString('en-US')}` : 'N/A';
+    },
+    tagClass(value) {
+      return typeof providedFmt.tagClass === 'function' ? providedFmt.tagClass(value) : '';
+    }
+  };
+
+  // server.js stores the logged in employee's first name as FirstName
+  const welcomeName = (typeof FirstName !== 'undefined' && FirstName) || dashboardUser.firstName || dashboardUser.name || '';
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../template/head', { title: 'Dashboard' }) %>
+</head>
+<body>
+  <div class="app">
+    <%- include('../template/nav', { active: 'dashboard' }) %>
+
+    <main class="content">
+      <%- include('../template/topbar') %>
+      <%- include('../template/messages') %>
+
+      <header class="page-header">
+        <h1><%= welcomeName ? 'Welcome, ' + welcomeName : 'Welcome' %></h1>
+      </header>
+
+      <section class="dashboard-grid" aria-label="Dashboard overview">
+        <!-- SALES -->
+        <article class="dash-card">
+          <h2>Sales</h2>
+          <div class="dash-body sales">
+            <% if (!salesAvailable) { %>
+              <p class="empty">Sales data is not connected yet.</p>
+            <% } else { %>
+              <% if (hasDonut) { %>
+                <svg class="donut" viewBox="0 0 42 42" role="img"
+                     aria-label="Sales by category for the last <%= sales.days %> days">
+                  <circle cx="21" cy="21" r="15.9155" fill="none"
+                          stroke="#e4e7ff" stroke-width="7" />
+                  <% segments.forEach(function(seg) { %>
+                    <circle cx="21" cy="21" r="15.9155" fill="none"
+                            stroke="<%= seg.color || '#5154bc' %>"
+                            stroke-width="7"
+                            stroke-dasharray="<%= seg.dash || '0 100' %>"
+                            stroke-dashoffset="<%= seg.offset || 0 %>" />
+                  <% }); %>
+                </svg>
+              <% } %>
+              <div class="sales-summary">
+                <p class="sales-total"><%= sales.revenue === null ? 'Revenue unavailable' : displayFmt.money(sales.revenue) %></p>
+                <p class="sales-note">
+                  <%= sales.units === null ? 'Units unavailable' : displayFmt.number(sales.units) + ' units sold' %> in the last
+                  <%= sales.days %> days
+                </p>
+                <% if (hasDonut) { %>
+                  <ul class="legend">
+                    <% segments.forEach(function(seg) { %>
+                      <li>
+                        <span class="dot" style="background-color: <%= seg.color || '#5154bc' %>"></span>
+                        <span class="legend-name"><%= seg.name || 'Other' %></span>
+                        <span class="legend-value"><%= displayFmt.money(seg.revenue || 0) %></span>
+                      </li>
+                    <% }); %>
+                  </ul>
+                <% } %>
+              </div>
+            <% } %>
+          </div>
+        </article>
+
+        <!-- RECENT ORDERS -->
+        <article class="dash-card">
+          <h2>Recent Orders</h2>
+          <div class="dash-body">
+            <% if (!ordersAvailable) { %>
+              <p class="empty">Recent order data is not connected yet.</p>
+            <% } else if (recentOrders.length === 0) { %>
+              <p class="empty">No orders recorded yet.</p>
+            <% } else { %>
+              <ul class="rows">
+                <% recentOrders.forEach(function(o) { %>
+                  <% const orderQty = Number(o.quantity_change) || 0; %>
+                  <li>
+                    <div class="row-main">
+                      <span class="row-title"><%= o.product || 'Unknown Product' %></span>
+                      <span class="row-sub">
+                        <%= o.size || 'N/A' %> / <%= o.color || 'N/A' %>,
+                        <%= displayFmt.date(o.date) %>,
+                        <%= o.employee || 'Unknown' %>
+                      </span>
+                    </div>
+                    <div class="row-side">
+                      <span class="tag <%= displayFmt.tagClass(o.transaction_type) %>">
+                        <%= o.transaction_type || 'Unknown' %>
+                      </span>
+                      <span class="qty <%= orderQty < 0 ? 'neg' : 'pos' %>">
+                        <%= displayFmt.signed(orderQty) %>
+                      </span>
+                    </div>
+                  </li>
+                <% }); %>
+              </ul>
+            <% } %>
+          </div>
+        </article>
+
+        <!-- LOW STOCK -->
+        <article class="dash-card">
+          <h2>Low Stock</h2>
+          <div class="dash-body">
+            <% if (!stockAvailable) { %>
+              <p class="empty">Inventory data is not connected yet.</p>
+            <% } else if (lowStock.length === 0) { %>
+              <p class="empty">
+                Nothing is running low. Items with <%= threshold %> or fewer units appear here.
+              </p>
+            <% } else { %>
+              <ul class="rows">
+                <% lowStock.forEach(function(item) { %>
+                  <%
+                    const quantity = Number(item.quantity) || 0;
+                    const pct = Math.min(100, Math.max(0, Math.round((quantity / threshold) * 100)));
+                  %>
+                  <li class="stock-row">
+                    <div class="row-main">
+                      <span class="row-title"><%= item.product || 'Unknown Product' %></span>
+                      <span class="row-sub">
+                        <%= item.size || 'N/A' %> / <%= item.color || 'N/A' %>
+                      </span>
+                    </div>
+                    <span class="meter" role="img" aria-label="<%= quantity %> in stock">
+                      <i style="width: <%= pct %>%;"></i>
+                    </span>
+                    <span class="tag tag-red"><%= quantity %> left</span>
+                  </li>
+                <% }); %>
+              </ul>
+            <% } %>
+          </div>
+        </article>
+
+        <!-- INVENTORY TREND -->
+        <article class="dash-card">
+          <h2>Inventory Trend Graph</h2>
+          <div class="dash-body">
+            <% if (hasTrend) { %>
+              <div class="trend-wrap">
+                <p class="trend-total">
+                  <strong><%= displayFmt.number(trendSource.last.total_units) %></strong>
+                  units in stock on <%= displayFmt.date(trendSource.last.date) %>
+                </p>
+                <svg class="trend" viewBox="0 0 320 140" role="img"
+                     aria-label="Total units in stock from <%= displayFmt.date(trendSource.first.date) %> to <%= displayFmt.date(trendSource.last.date) %>">
+                  <defs>
+                    <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" style="stop-color:#0000aa;stop-opacity:.22" />
+                      <stop offset="1" style="stop-color:#0000aa;stop-opacity:0" />
+                    </linearGradient>
+                  </defs>
+                  <line class="grid-line" x1="0" y1="20" x2="320" y2="20" />
+                  <line class="grid-line" x1="0" y1="55" x2="320" y2="55" />
+                  <line class="grid-line" x1="0" y1="90" x2="320" y2="90" />
+                  <line class="grid-line" x1="0" y1="125" x2="320" y2="125" />
+                  <path class="trend-area" d="<%= trendSource.area || '' %>" />
+                  <path class="trend-line" d="<%= trendSource.line || '' %>" />
+                </svg>
+                <p class="trend-caption">
+                  <span><%= displayFmt.date(trendSource.first.date) %></span>
+                  <span><%= displayFmt.date(trendSource.last.date) %></span>
+                </p>
+              </div>
+            <% } else { %>
+              <p class="empty">
+                Inventory history is unavailable. Confirm that invoice transactions and inventory records are available from Flask.
+              </p>
+            <% } %>
+          </div>
+        </article>
+      </section>
+
+      <%- include('../template/footer', { showStatus: typeof api !== 'undefined' && typeof env !== 'undefined' }) %>
+    </main>
+  </div>
+  <%- include('../template/scripts') %>
+</body>
 </html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <%- include('../template/head', { title: 'Orders' }); %>
+    </head>
+
+    <body>
+        <div class="app">
+            <%- include('../template/nav', { active: 'orders' }); %>
+
+            <main class="content">
+                <%- include('../template/topbar'); %>
+                <%- include('../template/messages'); %>
+
+                <header class="page-header">
+                  <h1>Orders</h1>
+                </header>
+
+                <nav class="tabs" aria-label="Filter orders by type">
+                  <a href="/orders" class="<%= selected ? '' : 'active' %>"<% if (!selected) { %> aria-current="page"<% } %>>All</a>
+                  <% types.forEach(t => { %>
+                    <a href="/orders?type=<%= encodeURIComponent(t) %>" class="<%= selected === t ? 'active' : '' %>"<% if (selected === t) { %> aria-current="page"<% } %>><%= t %></a>
+                  <% }) %>
+                </nav>
+
+                <section class="panel">
+                  <div class="panel-bar">
+                    <%= fmt.number(rows.length) %> <%= rows.length === 1 ? 'record' : 'records' %><% if (rows.length >= limit) { %>, showing the latest <%= limit %><% } %>
+                  </div>
+                  <div class="table-scroll">
+                    <table class="data-table">
+                      <caption class="visually-hidden">Order and transaction records</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Invoice</th>
+                          <th scope="col">Date</th>
+                          <th scope="col">Type</th>
+                          <th scope="col">Product</th>
+                          <th scope="col">Size</th>
+                          <th scope="col">Color</th>
+                          <th scope="col" class="num">Quantity change</th>
+                          <th scope="col">Employee</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <% if (!dataAvailable) { %>
+                          <tr><td colspan="8" class="empty-cell">Order data is unavailable. Check the message above and the Flask database mapping.</td></tr>
+                        <% } else if (!rows.length) { %>
+                          <tr><td colspan="8" class="empty-cell">No matching orders found.</td></tr>
+                        <% } %>
+                        <% rows.forEach(r => { %>
+                          <tr>
+                            <td><%= r.invoice_id == null ? 'N/A' : '#' + r.invoice_id %></td>
+                            <td><%= fmt.date(r.date) %></td>
+                            <td><span class="tag <%= fmt.tagClass(r.transaction_type) %>"><%= r.transaction_type %></span></td>
+                            <td><strong><%= r.product %></strong></td>
+                            <td><%= r.size %></td>
+                            <td><%= r.color %></td>
+                            <td class="num"><span class="qty <%= r.quantity_change < 0 ? 'neg' : 'pos' %>"><%= fmt.signed(r.quantity_change) %></span></td>
+                            <td><%= r.employee || 'N/A' %></td>
+                          </tr>
+                        <% }) %>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <%- include('../template/footer'); %>
+            </main>
+        </div>
+        <%- include('../template/scripts'); %>
+    </body>
+</html>

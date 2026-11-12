@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <%- include('../template/head', { title: 'Settings' }); %>
+    </head>
+
+    <body>
+        <div class="app">
+            <%- include('../template/nav', { active: 'settings' }); %>
+
+            <main class="content">
+                <%- include('../template/topbar'); %>
+                <%- include('../template/messages'); %>
+
+                <header class="page-header">
+                  <h1>Settings</h1>
+                </header>
+
+                <section class="panel">
+                  <% if (!authenticated) { %>
+                    <p style="padding:1.25rem; margin:0;">You are not signed in. <a href="/login">Sign in</a> to view your real profile from MySQL.</p>
+                  <% } else { %>
+                  <dl class="details">
+                    <dt>Name</dt><dd><%= user.name %></dd>
+                    <dt>Username</dt><dd><%= user.username %></dd>
+                    <dt>Email</dt><dd><%= user.email || 'N/A' %></dd>
+                    <dt>Role</dt><dd><%= user.role || 'N/A' %></dd>
+                  </dl>
+                  <% } %>
+                </section>
+
+                <%- include('../template/footer'); %>
+            </main>
+        </div>
+        <%- include('../template/scripts'); %>
+    </body>
+</html>

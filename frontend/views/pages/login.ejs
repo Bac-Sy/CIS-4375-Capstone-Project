@@ -1,36 +1,29 @@
 <!doctype html>
 <html lang="en">
-<head>
-<%- include('../template/head', { title: 'Log in' }); %>
-</head>
+    <head>
+        <%- include('../template/head', { title: 'Log in' }) %>
+    </head>
 
-<body>
-<%- include('../template/nav'); %>
-<main>
-<div class="container" style="max-width: 400px;">
-<h2 class="mb-4">Employee login</h2>
+    <body class="auth-body">
+        <main class="auth-card">
+            <img class="auth-logo" src="/images/logo.png" alt="SCC logo">
+            <h1>Employee login</h1>
+            <% if (ErrorMessage) { %>
+              <p class="form-error" role="alert"><%= ErrorMessage %></p>
+            <% } %>
+            <!-- The form posts to /process/login. The input names (Username, Password) must stay the same for the login to work. -->
+            <form action="/process/login" method="POST" class="auth-form">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <label for="Username">Username</label>
+              <input type="text" id="Username" name="Username" autocomplete="username" required autofocus>
 
-<% if (ErrorMessage) { %>
-<div class="alert alert-danger"><%= ErrorMessage %></div>
-<% } %>
+              <label for="Password">Password</label>
+              <input type="password" id="Password" name="Password" autocomplete="current-password" required>
 
-<!-- The form posts to /process/login. The input names (Username, Password) must stay the same for the login to work. -->
-<form action="/process/login" method="POST">
-<div class="mb-3">
-<label for="Username" class="form-label">Username</label>
-<input type="text" class="form-control" id="Username" name="Username" autocomplete="username" required>
-</div>
-
-<div class="mb-3">
-<label for="Password" class="form-label">Password</label>
-<input type="password" class="form-control" id="Password" name="Password" autocomplete="current-password" required>
-</div>
-
-<button type="submit" class="btn btn-primary">Log in</button>
-</form>
-</div>
-</main>
-<%- include('../template/footer'); %>
-<%- include('../template/scripts'); %>
-</body>
+              <button type="submit" class="scc-btn">Log in</button>
+            </form>
+            <p class="auth-brand"><a href="/">Back to dashboard</a></p>
+        </main>
+        <%- include('../template/scripts') %>
+    </body>
 </html>
