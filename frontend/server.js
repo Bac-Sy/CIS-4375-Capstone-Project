@@ -567,8 +567,17 @@ app.post('/create/employee', managerOnly, async (req, res) => {
     });
     return flashAndRedirect(req, res, reply?.message || 'Employee created.', '/new/employee');
   } catch (err) {
-    return flashAndRedirect(req, res, apiError(err, 'Unable to create employee.'), '/new/employee');
-  }
+  return page(req, res, 'newemployee', {
+    message: apiError(err, 'Unable to create employee.'),
+    form: {
+      First_Name: req.body.First_Name,
+      Last_Name: req.body.Last_Name,
+      Role: req.body.Role,
+      Username: req.body.Username,
+      Email: req.body.Email
+    }
+  }, 400);
+}
 });
 
 // Edit screens from screenshot: supplier, category, location, product, variant.
@@ -602,6 +611,7 @@ const editPages = [
 ];
 
 for (const config of editPages) {
+  const label = config.key.charAt(0).toUpperCase() + config.key.slice(1);
   app.get(`/${config.kind}/:id/edit`, signedIn, async (req, res) => {
     try {
       const results = await Promise.all(config.list.map(apiGetEndpoint => apiGet(apiGetEndpoint)));
@@ -623,7 +633,7 @@ for (const config of editPages) {
     }
     try {
       await apiPut(`${config.put}/${encodeURIComponent(req.params.id)}`, updated);
-      return flashAndRedirect(req, res, `${config.key} updated.`, `/${config.kind}/${encodeURIComponent(req.params.id)}/edit`);
+      return flashAndRedirect(req, res, `${label} updated.`, `/${config.kind}/${encodeURIComponent(req.params.id)}/edit`);
     } catch (err) {
       return flashAndRedirect(req, res, apiError(err, `Unable to update ${config.key}.`), `/${config.kind}/${encodeURIComponent(req.params.id)}/edit`);
     }
@@ -632,7 +642,7 @@ for (const config of editPages) {
   app.post(`/${config.kind}/:id/delete`, managerOnly, async (req, res) => {
     try {
       await apiDelete(`${config.put}/${encodeURIComponent(req.params.id)}`);
-      return flashAndRedirect(req, res, `${config.key} deleted.`, '/manage');
+      return flashAndRedirect(req, res, `${label} deleted.`, '/manage');
     } catch (err) {
       const destination = config.kind === 'products'
         ? `/${config.kind}/${encodeURIComponent(req.params.id)}/edit` : '/manage';

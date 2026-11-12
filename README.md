@@ -12,7 +12,8 @@ frontend/views/
   pages/              one .ejs file per page (index.ejs, ...)
   template/           shared pieces: head, nav, footer, messages, scripts
 public/css/           custom CSS (styles.css)
-server.js             Express routes: call the Flask API with axios, render pages
+frontend/
+    server.js         Express routes
 package.json
 ```
 
@@ -80,7 +81,21 @@ Then open a pull request on GitHub: **base: `dev` ← compare: `yourname`**. Amr
 2. When `dev` is stable, open a PR `dev` → `test` and test against the test database.
 3. When `test` passes, open a PR `test` → `main` (production).
 
-## Running locally
+### Frontend (Express + EJS, port 8080)
+
+The Express server is located at frontend/server.js.
+
+To start the frontend, open a terminal in the
+main project directory and run:
+
+npm install
+npm run dev
+
+The npm run dev command starts frontend/server.js,
+not the old root-level server.js.
+
+The frontend runs at http://localhost:8080.
+The Flask backend runs separately on port 5000.
 
 ### Database
 The team's MySQL database is hosted on AWS RDS. Ask the team for the RDS endpoint, username, and password, and put them in your backend `.env` file (see below).
