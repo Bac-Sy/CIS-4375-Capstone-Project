@@ -1,6 +1,6 @@
 # CIS-4375-Capstone-Project
 
-**Stack:** MySQL on AWS RDS (managed in MySQL Workbench) → Flask API (`backend/`) → Node/Express server (`server.js`) rendering EJS views (`frontend/`)
+**Stack:** MySQL on AWS RDS (managed in MySQL Workbench) → Flask API (`backend/`) → Node/Express server (`frontend/server.js`) rendering EJS views (`frontend/`)
 
 ```
 backend/
@@ -20,7 +20,7 @@ package.json
 ### Adding a feature
 
 1. **Flask route** in `backend/api.py`: query the database and return JSON.
-2. **Express route** in `server.js`: call that API with `axios`, then `res.render()` a page.
+2. **Express route** in `frontend/server.js`: call that API with `axios`, then `res.render()` a page.
 3. **Page** in `frontend/views/pages/`: copy `index.ejs` and change the `<main>` section.
 
 Always pass user input as query parameters, never with `%` formatting (that allows SQL injection):
@@ -81,22 +81,6 @@ Then open a pull request on GitHub: **base: `dev` ← compare: `yourname`**. Amr
 2. When `dev` is stable, open a PR `dev` → `test` and test against the test database.
 3. When `test` passes, open a PR `test` → `main` (production).
 
-### Frontend (Express + EJS, port 8080)
-
-The Express server is located at frontend/server.js.
-
-To start the frontend, open a terminal in the
-main project directory and run:
-
-npm install
-npm run dev
-
-The npm run dev command starts frontend/server.js,
-not the old root-level server.js.
-
-The frontend runs at http://localhost:8080.
-The Flask backend runs separately on port 5000.
-
 ### Database
 The team's MySQL database is hosted on AWS RDS. Ask the team for the RDS endpoint, username, and password, and put them in your backend `.env` file (see below).
 
@@ -107,19 +91,30 @@ python -m venv venv
 venv\Scripts\activate           # Windows  (Mac: source venv/bin/activate)
 pip install -r requirements.txt
 copy .env.development.example .env.development   # Mac: cp ...  then fill in the RDS details
+python -c "import secrets; print(secrets.token_hex(32))"   # generates AUTH_TOKEN_SECRET (see below)
 python api.py
 ```
+Before running `python api.py`, set `AUTH_TOKEN_SECRET` in `backend/.env.development`:
+
+- Generate a secret with `python -c "import secrets; print(secrets.token_hex(32))"`.
+- Paste it into `backend/.env.development` as `AUTH_TOKEN_SECRET=...`. It must be at least 32 characters and different from the frontend's `SESSION_SECRET`.
+- Without it, login fails with "Flask or MySQL may be unavailable."
+- Only put real secrets in `.env.development`, never in the `.example` files, which are committed.
+
 Set `APP_ENV=test` or `APP_ENV=production` to switch environments. Visit http://localhost:5000/db/check to confirm the database connection.
 
 ### Frontend (Express + EJS, port 8080)
+The Express server is `frontend/server.js`. `npm run dev` starts `frontend/server.js`, not the old top-level `server.js`.
+
 In a second terminal, from the project folder (not `backend/`):
 ```bash
 npm install
 copy .env.development.example .env.development   # Mac: cp ...  then set SESSION_SECRET
-npm run dev            # development
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"   # generates SESSION_SECRET
+npm run dev            # development (runs frontend/server.js)
 npm run start:test     # test
 npm start              # production
 ```
-Open http://localhost:8080. The page shows whether the Flask API is reachable.
+Open http://localhost:8080. The page shows whether the Flask API is reachable. The Flask backend must be running separately on port 5000.
 
 > Real `.env.*` files are git-ignored. Never commit passwords.
