@@ -1,0 +1,81 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <%- include('../template/head', { title: 'Record Transaction' }) %>
+</head>
+<body>
+<div class="app">
+  <%- include('../template/nav', { active: 'orders' }) %>
+  <main class="content">
+    <%- include('../template/topbar') %>
+    <%- include('../template/messages') %>
+
+    <header class="page-header">
+      <h1>Record Transaction</h1>
+    </header>
+
+    <section class="panel form-panel">
+      <form action="/record/transaction" method="POST"
+            data-confirm="Record this transaction?"
+            data-confirm-button="Record transaction">
+
+        <input type="hidden" name="_csrf"
+               value="<%= csrfToken %>">
+
+        <div class="mb-3">
+          <label for="Variant_ID" class="form-label">
+            Product variant
+          </label>
+          <select name="Variant_ID" id="Variant_ID"
+                  class="form-select" required>
+            <option value="">Select a product</option>
+            <% variants.forEach(function(v) { %>
+              <option value="<%= v.variant_id %>">
+                <%= v.product %> —
+                <%= v.size %> / <%= v.color %>
+                (<%= v.quantity %> in stock)
+              </option>
+            <% }); %>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label for="Transaction_Type_ID" class="form-label">
+            Transaction type
+          </label>
+          <select name="Transaction_Type_ID"
+                  id="Transaction_Type_ID"
+                  class="form-select" required>
+            <option value="">Select type</option>
+            <% types.forEach(function(t) { %>
+              <option value="<%= t.Transaction_Type_ID %>">
+                <%= t.Transaction_Type %>
+              </option>
+            <% }); %>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label for="Quantity" class="form-label">Quantity</label>
+          <input type="number" name="Quantity" id="Quantity"
+                 class="form-control" min="1" step="1" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+          Record transaction
+        </button>
+        <a href="/orders" class="btn btn-outline-secondary">
+          Cancel
+        </a>
+      </form>
+    </section>
+
+    <%- include('../template/footer') %>
+  </main>
+</div>
+
+<%- include('../template/scripts') %>
+<%- include('../template/confirm') %>
+</body>
+</html>
