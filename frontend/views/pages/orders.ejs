@@ -12,8 +12,13 @@
                 <%- include('../template/topbar'); %>
                 <%- include('../template/messages'); %>
 
-                <header class="page-header">
+                <header class="page-header"
+                        style="display:flex;justify-content:space-between;
+                              align-items:center;gap:1rem;flex-wrap:wrap;">
                   <h1>Orders</h1>
+                  <a href="/new/transaction" class="scc-btn">
+                    + Record Transaction
+                  </a>
                 </header>
 
                 <nav class="tabs" aria-label="Filter orders by type">
@@ -40,6 +45,7 @@
                           <th scope="col">Color</th>
                           <th scope="col" class="num">Quantity change</th>
                           <th scope="col">Employee</th>
+                          <th scope="col">Actions</th>
                           <th scope="col">Action</th>
                         </tr>
                       </thead>
@@ -59,7 +65,40 @@
                             <td><%= r.color %></td>
                             <td class="num"><span class="qty <%= r.quantity_change < 0 ? 'neg' : 'pos' %>"><%= fmt.signed(r.quantity_change) %></span></td>
                             <td><%= r.employee || 'N/A' %></td>
-                            <td><% if (r.invoice_id) { %><a href="/orders/<%= r.invoice_id %>/edit">Edit</a><% } %></td>
+                            <td>
+                              <% if (r.invoice_id && authenticated) { %>
+
+                                <!-- EDIT BUTTON -->
+                                <a href="/orders/<%= r.invoice_id %>/edit"
+                                  class="btn btn-outline-primary">
+                                  Edit
+                                </a>
+
+                                <!-- DELETE BUTTON: MANAGERS ONLY -->
+                                <% if (Role === 'Manager') { %>
+
+                                  <form action="/orders/<%= r.invoice_id %>/delete"
+                                        method="POST"
+                                        class="inline-form"
+                                        data-confirm="Delete order #<%= r.invoice_id %>? This will reverse its inventory change."
+                                        data-confirm-button="Delete"
+                                        data-confirm-style="danger">
+
+                                    <input type="hidden"
+                                          name="_csrf"
+                                          value="<%= csrfToken %>">
+
+                                    <button type="submit" class="btn btn-outline-danger">
+                                      Delete
+                                    </button>
+
+                                  </form>
+
+                                <% } %>
+
+                              <% } %>
+                            </td>
+
                           </tr>
                         <% }) %>
                       </tbody>
@@ -71,5 +110,6 @@
             </main>
         </div>
         <%- include('../template/scripts'); %>
-    </body>
-</html>
+        <%- include('../template/confirm'); %>
+      </body>
+    </html>

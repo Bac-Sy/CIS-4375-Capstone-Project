@@ -479,41 +479,232 @@ app.get('/orders', pageAccess, async (req, res) => {
     });
   }
 });
-// EDIT / DELETE ONE ORDER (item 18): fixes a typo in a sale or restock. Flask corrects the stock.
+
+
+app.get('/new/transaction', signedIn, async (req, res) => {
+  try {
+    const inventory = await loadInventory();
+    const allTypes = await apiGet('/show/all/transaction/types');
+
+    const types = arrayData(allTypes).filter(t =>
+      ['Sale', 'Restock'].includes(t.Transaction_Type)
+    );
+
+    return page(req, res, 'newtransaction', {
+      variants: inventory.items.filter(v =>
+        Number.isSafeInteger(Number(v.variant_id)) &&
+        Number(v.variant_id) > 0
+      ),
+      types
+    });
+  } catch (err) {
+    return errorPage(
+      req, res, 503, 'Transactions unavailable',
+      apiError(err, 'Unable to load transaction form.')
+    );
+  }
+});
+
+app.post('/record/transaction', signedIn, async (req, res) => {
+  try {
+    const variantId = Number(req.body.Variant_ID);
+    const typeId = Number(req.body.Transaction_Type_ID);
+    const quantity = Number(req.body.Quantity);
+
+    if (![variantId, typeId, quantity].every(
+      n => Number.isSafeInteger(n) && n > 0
+    )) {
+      return flashAndRedirect(
+        req, res, 'Enter valid transaction details.',
+        '/new/transaction'
+      );
+    }
+
+    const inventory = await loadInventory();
+    const variantExists = inventory.items.some(v =>
+      Number(v.variant_id) === variantId
+    );
+
+    if (!variantExists) {
+      return flashAndRedirect(
+        req, res, 'Choose a valid inventory item.',
+        '/new/transaction'
+      );
+    }
+
+    const allTypes = await apiGet('/show/all/transaction/types');
+    const selected = arrayData(allTypes).find(t =>
+      Number(t.Transaction_Type_ID) === typeId
+    );
+
+    if (!selected ||
+        !['Sale', 'Restock'].includes(selected.Transaction_Type)) {
+      return flashAndRedirect(
+        req, res, 'Choose Sale or Restock.',
+        '/new/transaction'
+      );
+    }
+
+    const change =
+      selected.Transaction_Type === 'Sale'
+        ? -quantity
+        : quantity;
+
+    const result = await apiPost('/create/invoice', {
+      Variant_ID: variantId,
+      Transaction_Type_ID: typeId,
+      Quantity_Change: change,
+      Employee_ID: req.session.user.id
+    });
+
+    return flashAndRedirect(
+      req, res,
+      result?.message || 'Transaction recorded.',
+      '/orders'
+    );
+  } catch (err) {
+    return flashAndRedirect(
+      req, res,
+      apiError(err, 'Unable to record transaction.'),
+      '/new/transaction'
+    );
+  }
+});
+
+// Find an existing order by invoice ID.
 async function findOrder(id) {
   const reply = await apiGet('/orders', { limit: 200 });
-  const rows = arrayData(Array.isArray(reply) ? reply : reply?.rows).map(normalizeOrder);
-  return rows.find(r => String(r.invoice_id) === String(id));
+
+  const rows = arrayData(
+    Array.isArray(reply) ? reply : reply?.rows
+  ).map(normalizeOrder);
+
+  return rows.find(
+    r => String(r.invoice_id) === String(id)
+  ) || null;
 }
+
+// GET: Display the Edit Order page.
 app.get('/orders/:id/edit', signedIn, async (req, res) => {
   try {
     const order = await findOrder(req.params.id);
-    if (!order) return errorPage(req, res, 404, 'Record not found', `Order #${req.params.id} isn't in the latest 200 orders.`);
+
+    if (!order) {
+      return errorPage(
+        req, res, 404,
+        'Order not found',
+        'The selected order could not be found.'
+      );
+    }
+
     return page(req, res, 'edit-order', { order });
+
   } catch (err) {
-    return errorPage(req, res, 503, 'Could not load record', apiError(err, 'Unable to load order.'));
+    return errorPage(
+      req, res, 503,
+      'Unable to load order',
+      apiError(err, 'Order information is unavailable.')
+    );
   }
 });
+
+// POST: Save changes to an Order.
 app.post('/orders/:id/edit', signedIn, async (req, res) => {
-  const back = `/orders/${encodeURIComponent(req.params.id)}/edit`;
+  const back =
+    `/orders/${encodeURIComponent(req.params.id)}/edit`;
+
   try {
+    const rawQuantity = String(
+      req.body.Quantity_Change ?? ''
+    ).trim();
+
+    // Quantity must be a nonzero whole number.
+    if (!/^-?\d+$/.test(rawQuantity) ||
+        !Number.isSafeInteger(Number(rawQuantity)) ||
+        Number(rawQuantity) === 0) {
+
+      return flashAndRedirect(
+        req, res,
+        'Enter a valid nonzero whole-number quantity.',
+        back
+      );
+    }
+
+    const quantity = Number(rawQuantity);
+    const order = await findOrder(req.params.id);
+
+    if (!order) {
+      return errorPage(
+        req, res, 404,
+        'Order not found',
+        'The selected order could not be found.'
+      );
+    }
+
+    const type = String(
+      order.transaction_type || ''
+    ).toLowerCase();
+
+    // Sales reduce inventory. Restocks increase it.
+    if ((type.includes('sale') && quantity >= 0) ||
+        (type === 'restock' && quantity <= 0)) {
+
+      return flashAndRedirect(
+        req, res,
+        'Sales must be negative and Restocks must be positive.',
+        back
+      );
+    }
+
     const result = await apiPut('/update/invoice', {
       Invoice_ID: req.params.id,
-      Quantity_Change: req.body.Quantity_Change
+      Quantity_Change: quantity
     });
-    return flashAndRedirect(req, res, result?.message || 'Order updated.', back);
+
+    return flashAndRedirect(
+      req, res,
+      result?.message || 'Order updated successfully.',
+      '/orders'
+    );
+
   } catch (err) {
-    return flashAndRedirect(req, res, apiError(err, 'Unable to update order.'), back);
+    return flashAndRedirect(
+      req, res,
+      apiError(err, 'Unable to update order.'),
+      back
+    );
   }
 });
+
+// POST: Delete an Order (Managers only).
 app.post('/orders/:id/delete', managerOnly, async (req, res) => {
   try {
-    const result = await apiRequest('DELETE', '/delete/invoice', { body: { Invoice_ID: req.params.id } });
-    return flashAndRedirect(req, res, result?.message || 'Order deleted.', '/orders');
+    const result = await apiRequest(
+      'DELETE',
+      '/delete/invoice',
+      {
+        body: {
+          Invoice_ID: req.params.id
+        }
+      }
+    );
+
+    return flashAndRedirect(
+      req, res,
+      result?.message || 'Order deleted successfully.',
+      '/orders'
+    );
+
   } catch (err) {
-    return flashAndRedirect(req, res, apiError(err, 'Unable to delete order.'), `/orders/${encodeURIComponent(req.params.id)}/edit`);
+    return flashAndRedirect(
+      req, res,
+      apiError(err, 'Unable to delete order.'),
+      '/orders'
+    );
   }
 });
+
+
 app.get('/employees', pageAccess, async (req, res) => {
   try {
     const reply = await apiGet('/employees');
@@ -523,7 +714,9 @@ app.get('/employees', pageAccess, async (req, res) => {
       last_name: e.last_name ?? e.Last_Name ?? '',
       username: e.username ?? e.Username ?? '',
       email: e.email ?? e.Email ?? '',
-      role: e.role ?? e.Role ?? ''
+      role: e.role ?? e.Role ?? '',
+      id: e.id ?? e.employee_id ?? e.Employee_ID ?? null,
+      active: e.active ?? e.is_active ?? e.Is_Active ?? null,
     }));
     return page(req, res, 'employees', { employees, dataAvailable: true });
   } catch (err) {
@@ -537,74 +730,559 @@ app.get('/settings', pageAccess, (req, res) => page(req, res, 'settings', {
   message: req.session.user?.id ? res.locals.message : 'Sign in to see your real account details.'
 }));
 
-// Manager catalog index makes the five existing edit pages discoverable.
-app.get('/manage', managerOnly, async (req, res) => {
+
+async function findEmployee(id) {
+  const response = await apiGet('/employees');
+
+  const employees = arrayData(
+    Array.isArray(response)
+      ? response
+      : response?.employees
+  );
+
+  const match = employees.find(e =>
+    String(e.id ?? e.employee_id ?? e.Employee_ID) === String(id)
+  );
+
+  if (!match) return null;
+
+  return {
+    id: match.id ?? match.employee_id ?? match.Employee_ID,
+    First_Name: match.First_Name ?? match.first_name ?? '',
+    Last_Name: match.Last_Name ?? match.last_name ?? '',
+    Username: match.Username ?? match.username ?? '',
+    Email: match.Email ?? match.email ?? '',
+    Role: match.Role ?? match.role ?? ''
+  };
+}
+
+// 1. GET — DISPLAY EDIT EMPLOYEE PAGE
+
+app.get('/employees/:id/edit', managerOnly, async (req, res) => {
   try {
-    const [suppliers, categories, locations, products, variants, colors, sizes] = await Promise.all([
-      apiGet('/api/suppliers'), apiGet('/api/categories'), apiGet('/api/locations'),
-      apiGet('/api/products'), apiGet('/api/product_variants'),
-      apiGet('/show/all/colors'), apiGet('/show/all/sizes')
-    ]);
-    return page(req, res, 'manage', {
-      suppliers, categories, locations, products, variants,
-      colors: arrayData(colors), sizes: arrayData(sizes)
-    });
+    const employee = await findEmployee(req.params.id);
+
+    if (!employee) {
+      return errorPage(
+        req, res, 404,
+        'Employee not found',
+        'The selected employee could not be found.'
+      );
+    }
+
+    return page(req, res, 'editemployee', { employee });
+
   } catch (err) {
-    return errorPage(req, res, 503, 'Catalog unavailable', apiError(err, 'Unable to load the catalog.'));
+    return errorPage(
+      req, res, 503,
+      'Unable to load employee',
+      apiError(err, 'Employee information is unavailable.')
+    );
   }
 });
 
-// ADD / RENAME catalog lookups from Manage catalog (item 16). The Flask routes already exist.
+
+// 2. POST — SAVE EDIT EMPLOYEE CHANGES
+
+app.post('/employees/:id/edit', managerOnly, async (req, res) => {
+  const back =
+    `/employees/${encodeURIComponent(req.params.id)}/edit`;
+
+  try {
+    const employee = await findEmployee(req.params.id);
+
+    if (!employee) {
+      return errorPage(
+        req, res, 404,
+        'Employee not found',
+        'The selected employee could not be found.'
+      );
+    }
+
+    const firstName = String(req.body.First_Name ?? '').trim();
+    const lastName = String(req.body.Last_Name ?? '').trim();
+    const username = String(req.body.Username ?? '').trim();
+    const email = String(req.body.Email ?? '').trim();
+    const role = String(req.body.Role ?? '').trim();
+
+    if (!firstName || !lastName || !username || !email ||
+        !['Employee', 'Manager'].includes(role)) {
+      return flashAndRedirect(
+        req, res,
+        'Please enter valid employee information.',
+        back
+      );
+    }
+
+    if (firstName.length > 50 ||
+        lastName.length > 50 ||
+        username.length > 50 ||
+        email.length > 100 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return flashAndRedirect(
+        req, res,
+        'Check the employee fields and email address.',
+        back
+      );
+    }
+
+    // Avoid accidentally removing your own Manager access.
+    if (
+      String(employee.id) === String(req.session.user.id) &&
+      role !== 'Manager'
+    ) {
+      return flashAndRedirect(
+        req, res,
+        'You cannot remove your own Manager role.',
+        back
+      );
+    }
+
+    const result = await apiPut('/update/employee', {
+      Current_Email: employee.Email,
+      First_Name: firstName,
+      Last_Name: lastName,
+      Username: username,
+      Email: email,
+      Role: role
+    });
+
+    return flashAndRedirect(
+      req, res,
+      result?.message || 'Employee updated successfully.',
+      '/employees'
+    );
+
+  } catch (err) {
+    return flashAndRedirect(
+      req, res,
+      err?.body?.message ||
+        apiError(err, 'Unable to update employee.'),
+      back
+    );
+  }
+});
+
+
+// 3. GET — DISPLAY RESET PASSWORD PAGE
+
+app.get('/employees/:id/reset-password', managerOnly, async (req, res) => {
+  try {
+    const employee = await findEmployee(req.params.id);
+
+    if (!employee) {
+      return errorPage(
+        req, res, 404,
+        'Employee not found',
+        'The selected employee could not be found.'
+      );
+    }
+
+    return page(req, res, 'resetpassword', { employee });
+
+  } catch (err) {
+    return errorPage(
+      req, res, 503,
+      'Unable to load password reset page',
+      apiError(err, 'Employee information is unavailable.')
+    );
+  }
+});
+
+
+// 4. POST — RESET EMPLOYEE PASSWORD
+
+app.post('/employees/:id/reset-password', managerOnly, async (req, res) => {
+  const back =
+    `/employees/${encodeURIComponent(req.params.id)}/reset-password`;
+
+  try {
+    const password = String(req.body.Password ?? '');
+    const confirmation = String(req.body.ConfirmPassword ?? '');
+
+    if (password.length < 8 || password.length > 128) {
+      return flashAndRedirect(
+        req, res,
+        'Password must contain between 8 and 128 characters.',
+        back
+      );
+    }
+
+    if (password !== confirmation) {
+      return flashAndRedirect(
+        req, res,
+        'The passwords do not match.',
+        back
+      );
+    }
+
+    const employee = await findEmployee(req.params.id);
+
+    if (!employee) {
+      return errorPage(
+        req, res, 404,
+        'Employee not found',
+        'The selected employee could not be found.'
+      );
+    }
+
+    const result = await apiPut('/update/employee', {
+      Current_Email: employee.Email,
+      Password: password
+    });
+
+    return flashAndRedirect(
+      req, res,
+      result?.message || 'Employee password reset successfully.',
+      '/employees'
+    );
+
+  } catch (err) {
+    return flashAndRedirect(
+      req, res,
+      err?.body?.message ||
+        apiError(err, 'Unable to reset employee password.'),
+      back
+    );
+  }
+});
+
+
+// 5. POST — DELETE EMPLOYEE (MANAGER ONLY)
+
+app.post('/employees/:id/delete', managerOnly, async (req, res) => {
+  try {
+    const employee = await findEmployee(req.params.id);
+
+    if (!employee) {
+      return errorPage(
+        req, res, 404,
+        'Employee not found',
+        'The selected employee could not be found.'
+      );
+    }
+
+    // Prevent a Manager from deleting their own account.
+    if (String(employee.id) === String(req.session.user.id)) {
+      return flashAndRedirect(
+        req, res,
+        'You cannot delete your own account.',
+        '/employees'
+      );
+    }
+
+    // The Flask API identifies an employee by Email.
+    const result = await apiRequest(
+      'DELETE',
+      '/delete/employee',
+      {
+        body: {
+          Email: employee.Email
+        }
+      }
+    );
+
+    return flashAndRedirect(
+      req, res,
+      result?.message || 'Employee deleted successfully.',
+      '/employees'
+    );
+
+  } catch (err) {
+    return flashAndRedirect(
+      req, res,
+      err?.body?.message ||
+        apiError(err, 'Unable to delete employee.'),
+      '/employees'
+    );
+  }
+});
+
+
+app.get('/manage', managerOnly, async (req, res) => {
+  try {
+    const [
+      suppliers,
+      categories,
+      locations,
+      products,
+      variants,
+      colors,
+      sizes
+    ] = await Promise.all([
+      apiGet('/api/suppliers'),
+      apiGet('/api/categories'),
+      apiGet('/api/locations'),
+      apiGet('/api/products'),
+      apiGet('/api/product_variants'),
+      apiGet('/show/all/colors'),
+      apiGet('/show/all/sizes')
+    ]);
+
+    return page(req, res, 'manage', {
+      suppliers,
+      categories,
+      locations,
+      products,
+      variants,
+      colors: arrayData(colors),
+      sizes: arrayData(sizes)
+    });
+
+  } catch (err) {
+    return errorPage(
+      req, res, 503,
+      'Catalog unavailable',
+      apiError(err, 'Unable to load the catalog.')
+    );
+  }
+});
+
 const catalogAdds = {
-  suppliers: { endpoint: '/api/suppliers', fields: ['Name', 'Email', 'Phone'], label: 'Supplier' },
-  categories: { endpoint: '/api/categories', fields: ['Category'], label: 'Category' },
-  locations: { endpoint: '/api/locations', fields: ['Location_Name'], label: 'Location' },
-  colors: { endpoint: '/create/color', fields: ['Color'], label: 'Color' },
-  sizes: { endpoint: '/create/size', fields: ['Size'], label: 'Size' }
+  suppliers: {
+    endpoint: '/api/suppliers',
+    fields: ['Name', 'Email', 'Phone'],
+    required: 'Name'
+  },
+  categories: {
+    endpoint: '/api/categories',
+    fields: ['Category'],
+    required: 'Category'
+  },
+  locations: {
+    endpoint: '/api/locations',
+    fields: ['Location_Name'],
+    required: 'Location_Name'
+  },
+  colors: {
+    endpoint: '/create/color',
+    fields: ['Color'],
+    required: 'Color'
+  },
+  sizes: {
+    endpoint: '/create/size',
+    fields: ['Size'],
+    required: 'Size'
+  }
 };
+
 app.post('/manage/add/:kind', managerOnly, async (req, res) => {
   const config = catalogAdds[req.params.kind];
-  if (!config) return errorPage(req, res, 404, 'Page not found', 'The requested page does not exist.');
-  const body = {};
+
+  if (!config) {
+    return errorPage(
+      req, res, 404,
+      'Invalid catalogue type',
+      'This type of catalogue record cannot be added.'
+    );
+  }
+
+  const payload = {};
+
   for (const field of config.fields) {
-    const value = String(req.body[field] ?? '').trim();
-    body[field] = value === '' ? null : value;   // empty email/phone saved as blank, not ""
+    payload[field] = String(req.body[field] ?? '').trim();
   }
-  try {
-    const result = await apiPost(config.endpoint, body);
-    return flashAndRedirect(req, res, result?.message || `${config.label} added.`, '/manage');
-  } catch (err) {
-    return flashAndRedirect(req, res, apiError(err, `Unable to add ${config.label.toLowerCase()}.`), '/manage');
+
+  if (!payload[config.required]) {
+    return flashAndRedirect(
+      req, res, 'Please fill in the required field.',
+      '/manage'
+    );
   }
-});
-const catalogRenames = {
-  colors: { endpoint: '/update/color', id: 'Color_ID', field: 'Color', label: 'Color' },
-  sizes: { endpoint: '/update/size', id: 'Size_ID', field: 'Size', label: 'Size' }
-};
-app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
-  const config = catalogRenames[req.params.kind];
-  if (!config) return errorPage(req, res, 404, 'Page not found', 'The requested page does not exist.');
+
   try {
-    const result = await apiPut(config.endpoint, {
-      [config.id]: req.params.id, [config.field]: String(req.body.Name ?? '').trim()
-    });
-    return flashAndRedirect(req, res, result?.message || `${config.label} updated.`, '/manage');
+    const result = await apiPost(config.endpoint, payload);
+
+    return flashAndRedirect(
+      req, res,
+      result?.message || 'Catalogue record added.',
+      '/manage'
+    );
   } catch (err) {
-    return flashAndRedirect(req, res, apiError(err, `Unable to update ${config.label.toLowerCase()}.`), '/manage');
+    return flashAndRedirect(
+      req, res,
+      apiError(err, 'Unable to add catalogue record.'),
+      '/manage'
+    );
   }
 });
 
-app.get('/manage', managerOnly, async (req, res) => {
+// RENAME COLORS AND SIZES
+
+const catalogRenames = {
+  colors: {
+    endpoint: '/update/color',
+    idField: 'Color_ID',
+    nameField: 'Color'
+  },
+  sizes: {
+    endpoint: '/update/size',
+    idField: 'Size_ID',
+    nameField: 'Size'
+  }
+};
+
+app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
+  const config = catalogRenames[req.params.kind];
+
+  if (!config) {
+    return errorPage(
+      req, res, 404,
+      'Invalid catalogue type',
+      'Only Colors and Sizes can be renamed here.'
+    );
+  }
+
+  const id = Number(req.params.id);
+  const name = String(req.body.Name ?? '').trim();
+
+  if (!Number.isSafeInteger(id) || id <= 0 ||
+      !name || name.length > 50) {
+    return flashAndRedirect(
+      req, res,
+      'Enter a valid name.',
+      '/manage'
+    );
+  }
+
   try {
-    const [suppliers, categories, locations, products, variants] = await Promise.all([
-      apiGet('/api/suppliers'), apiGet('/api/categories'), apiGet('/api/locations'),
-      apiGet('/api/products'), apiGet('/api/product_variants')
-    ]);
-    return page(req, res, 'manage', { suppliers, categories, locations, products, variants });
+    const payload = {
+      [config.idField]: id,
+      [config.nameField]: name
+    };
+
+    const result = await apiPut(config.endpoint, payload);
+
+    return flashAndRedirect(
+      req, res,
+      result?.message || 'Catalogue record updated.',
+      '/manage'
+    );
   } catch (err) {
-    return errorPage(req, res, 503, 'Catalog unavailable', apiError(err, 'Unable to load the catalog.'));
+    return flashAndRedirect(
+      req, res,
+      apiError(err, 'Unable to rename catalogue record.'),
+      '/manage'
+    );
   }
 });
+
+app.get('/products/:id/variants/new', managerOnly, async (req, res) => {
+  try {
+    const [products, sizes, colors, locations] = await Promise.all([
+      apiGet('/api/products'),
+      apiGet('/show/all/sizes'),
+      apiGet('/show/all/colors'),
+      apiGet('/api/locations')
+    ]);
+
+    const product = arrayData(products).find(
+      p => String(p.Product_ID) === String(req.params.id)
+    );
+
+    if (!product) {
+      return errorPage(
+        req, res, 404, 'Product not found',
+        'The selected product does not exist.'
+      );
+    }
+
+    return page(req, res, 'newvariant', {
+      product,
+      sizes: arrayData(sizes),
+      colors: arrayData(colors),
+      locations: arrayData(locations)
+    });
+  } catch (err) {
+    return errorPage(
+      req, res, 503, 'Variant form unavailable',
+      apiError(err, 'Unable to load variant options.')
+    );
+  }
+});
+
+
+app.post('/products/:id/variants', managerOnly, async (req, res) => {
+  const productId = Number(req.params.id);
+  const sizeId = Number(req.body.Size_ID);
+  const colorId = Number(req.body.Color_ID);
+  const locationId = String(req.body.Location_ID || '').trim();
+  const priceText = String(req.body.Price ?? '');
+  const costText = String(req.body.Cost ?? '');
+  const quantityText = String(req.body.Quantity ?? '');
+
+  const validId = x =>
+    /^[1-9]\d*$/.test(String(x)) &&
+    Number.isSafeInteger(Number(x));
+
+  const validMoney = x =>
+    /^(0|[1-9]\d{0,7})(\.\d{1,2})?$/.test(x);
+
+  if (!validId(productId) || !validId(sizeId) ||
+      !validId(colorId) || !validId(locationId) ||
+      !validMoney(priceText) || !validMoney(costText) ||
+      !/^\d+$/.test(quantityText) ||
+      !Number.isSafeInteger(Number(quantityText))) {
+    return flashAndRedirect(
+      req, res, 'Enter valid variant and stock details.',
+      `/products/${encodeURIComponent(req.params.id)}/variants/new`
+    );
+  }
+
+  let variantId = null;
+
+  try {
+    const created = await apiPost('/api/product_variants', {
+      Product_ID: productId,
+      Size_ID: sizeId,
+      Color_ID: colorId,
+      Location_ID: locationId,
+      Price: Number(priceText),
+      Cost: Number(costText)
+    });
+
+    variantId = Number(created.Variant_ID);
+
+    if (!validId(variantId)) {
+      return flashAndRedirect(
+        req, res,
+        'Variant creation returned no valid ID. Check Manage Catalogue.',
+        '/manage'
+      );
+    }
+
+    await apiPost('/api/inventory', {
+      Variant_ID: variantId,
+      Quantity: 0
+    });
+
+    const startingQuantity = Number(quantityText);
+
+    if (startingQuantity > 0) {
+      await apiPut('/adjust/inventory', {
+        Variant_ID: variantId,
+        New_Quantity: startingQuantity
+      });
+    }
+
+    return flashAndRedirect(
+      req, res, 'Product variant and stock created.',
+      '/inventory'
+    );
+  } catch (err) {
+    const message = variantId
+      ? `Variant #${variantId} was created, but inventory setup may be incomplete. Check the records before retrying.`
+      : apiError(err, 'Unable to create the variant.');
+
+    return flashAndRedirect(
+      req, res, message,
+      variantId
+        ? '/manage'
+        : `/products/${encodeURIComponent(req.params.id)}/variants/new`
+    );
+  }
+});
+
 
 // MANAGER: create a catalogue product using the existing Flask product API.
 // A product needs a category and supplier; variants/stock are managed separately.
@@ -637,13 +1315,28 @@ app.post('/create/product', managerOnly, async (req, res) => {
   }
 
   try {
-    await apiPost('/api/products', {
-      Name: name,
-      Category_ID: Number(categoryId),
-      Supplier_ID: Number(supplierId),
-      Availability: Number(availability)
-    });
-    return flashAndRedirect(req, res, `Product "${name}" added to the catalogue.`, '/manage');
+    const created = await apiPost('/api/products', {
+  Name: name,
+  Category_ID: Number(categoryId),
+  Supplier_ID: Number(supplierId),
+  Availability: Number(availability)
+});
+
+const productId = Number(created.Product_ID);
+
+if (!Number.isSafeInteger(productId) || productId <= 0) {
+  return flashAndRedirect(
+    req, res,
+    'Product created, but no ID was returned. Check Manage Catalogue.',
+    '/manage'
+  );
+}
+
+return flashAndRedirect(
+  req, res,
+  `Product "${name}" created. Add its size/color variant next.`,
+  `/products/${productId}/variants/new`
+);
   } catch (err) {
     return flashAndRedirect(req, res, apiError(err, 'Unable to add product.'), '/new/product');
   }
