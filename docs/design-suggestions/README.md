@@ -8,7 +8,7 @@ The mockups use made-up products, people and emails just to show the layout.
 
 1. **Records shown by ID number instead of by name.** "Variant #2", "Invoice #25" and a list of bare variant numbers don't mean anything to someone working in the store. They have to remember or look up what the number is, and that's how the wrong thing gets edited or deleted.
 2. **Too many buttons on every row.** Edit / Reset password / Delete, or Edit product / Edit variant / a stock box with Save, repeated on every line. It makes tables wide and busy, and it's easy to click the wrong one.
-3. **Things you can't actually do.** Order fields you can't correct, a Settings page with no settings, a password you can't change yourself.
+3. **Things you can't actually do.** Order fields you can't correct, a Settings page with no settings, a password you can't change yourself. On the Dashboard, "Recent orders" that are mostly adjustments, and a trend graph that's a flat line with no numbers.
 4. **The same thing done differently on different pages.** Add buttons in different places, some lists with inline rename boxes and some with Edit links.
 
 So the suggestions follow a few rules:
@@ -212,3 +212,28 @@ Nobody in the store knows variants by their database number. Naming the product,
 - **Only real actions in each menu:** suppliers, categories and locations already have edit/delete pages; colors and sizes can only be renamed.
 
 **What it would touch:** `manage.ejs`, and the `/manage` route can stop fetching `/api/product_variants`. No API changes.
+
+---
+
+## 9. Dashboard: real recent orders, and a chart that answers a question
+
+![Dashboard mockup](dashboard.png)
+
+**What's different**
+
+- **Recent orders** shows **Sales** by default, with **Restocks** and **Adjustments** as tabs, and a "View all orders →" link.
+- **"Stock in vs. out"** replaces the Inventory Trend Graph: units **sold** and units **restocked** per week for the last 4 weeks, as side-by-side bars. Above it, one line sums it up: "Sold 41, restocked 30: stock is down 11 units". Adjustments aren't counted.
+- Low stock gets a "View in Inventory →" link. The Sales card stays as it is.
+
+**Why**
+
+- **Recent orders is mostly adjustments right now.** In our database, 4 of the 5 newest invoices are adjustments, so the card that's meant to show what's selling mostly shows stock corrections, and real sales get pushed off it. An adjustment isn't an order; it's fixing a count. Tabs keep all three types one click away without mixing them.
+- **The trend graph doesn't show anything useful.** It plots the *total number of units in the whole store* for each of the last 30 days. It works that out backwards from today's stock and each day's invoices, so any day where the changes add up to zero is flat. Our last 30 days have 10 invoices, mostly +1 / −1 test adjustments that cancel out, so the line is completely flat. It also has no numbers on the axis, so even a moving line can't be read.
+- **And a store-wide total isn't a question anyone asks.** "We have 412 units" mixes dresses and earrings together. A busy week where we sold 20 and restocked 20 looks identical to a week where nothing happened. What the owner actually wants to know is whether we're **restocking as fast as we're selling**. Sold vs. restocked per week answers that directly, and the summary line gives the answer without reading the chart.
+- **Adjustments are left out of the chart** for the same reason as the tabs: they're corrections, not stock coming in or going out.
+- **Colors:** blue for sold, teal for restocked (and a third, purple, for the Sales donut). They're checked to stay distinguishable for common color blindness, and the legend plus labels mean nothing depends on color alone. On the real page, hovering a bar should show its exact number.
+
+**What it would touch**
+
+- Recent orders: `index.ejs`. `/dashboard` in `backend/reporting.py` currently returns the 5 newest invoices of any type. It would need to return the newest 5 of each type, or accept a `?type=`, like `/orders` already does.
+- Stock in vs. out: `index.ejs` and `frontend/lib/charts.js` (bars instead of a line). The `/dashboard` route would return weekly totals of Sale and Restock quantities instead of the reconstructed daily stock total. That's a simpler query than the current one.
