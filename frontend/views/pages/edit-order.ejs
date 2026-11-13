@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Edit order' }) %>
+</head>
+
+<body>
+<div class="app">
+<%- include('../template/nav', { active: 'orders' }) %>
+<main class="content">
+<%- include('../template/topbar') %>
+<%- include('../template/messages') %>
+<header class="page-header">
+<h1>Edit order #<%= order.invoice_id %></h1>
+</header>
+<section class="panel form-panel">
+<p><strong><%= order.product %></strong> (<%= order.size %> / <%= order.color %>),
+<%= order.transaction_type %> on <%= fmt.date(order.date) %> by <%= order.employee || 'N/A' %></p>
+
+<form action="/orders/<%= order.invoice_id %>/edit" method="POST"
+data-confirm="Save changes to order #<%= order.invoice_id %>? The stock will be corrected by the difference."
+data-confirm-button="Save changes">
+<div class="mb-3">
+<label for="Quantity_Change" class="form-label">Quantity change (negative for a sale, positive for a restock)</label>
+<input type="number" class="form-control" id="Quantity_Change" name="Quantity_Change"
+value="<%= order.quantity_change %>" step="1" required>
+</div>
+
+<button type="submit" class="btn btn-primary">Save changes</button>
+<a href="/orders" class="btn btn-outline-secondary">Cancel</a>
+<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+</form>
+
+<% if (Role === 'Manager') { %>
+<hr class="my-4">
+<form action="/orders/<%= order.invoice_id %>/delete" method="POST"
+data-confirm="Delete order #<%= order.invoice_id %>? Its change to the stock will be undone. This can't be undone."
+data-confirm-button="Delete" data-confirm-style="danger">
+<button type="submit" class="btn btn-outline-danger">Delete order</button>
+<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+</form>
+<% } %>
+</section>
+<%- include('../template/footer') %>
+</main>
+</div>
+<%- include('../template/scripts') %>
+<%- include('../template/confirm') %>
+</body>
+</html>

@@ -40,13 +40,14 @@
                           <th scope="col">Color</th>
                           <th scope="col" class="num">Quantity change</th>
                           <th scope="col">Employee</th>
+                          <th scope="col">Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         <% if (!dataAvailable) { %>
-                          <tr><td colspan="8" class="empty-cell">Order data is unavailable. Check the message above and the Flask database mapping.</td></tr>
+                          <tr><td colspan="9" class="empty-cell">Order data is unavailable. Check the message above and the Flask database mapping.</td></tr>
                         <% } else if (!rows.length) { %>
-                          <tr><td colspan="8" class="empty-cell">No matching orders found.</td></tr>
+                          <tr><td colspan="9" class="empty-cell">No matching orders found.</td></tr>
                         <% } %>
                         <% rows.forEach(r => { %>
                           <tr>
@@ -58,6 +59,7 @@
                             <td><%= r.color %></td>
                             <td class="num"><span class="qty <%= r.quantity_change < 0 ? 'neg' : 'pos' %>"><%= fmt.signed(r.quantity_change) %></span></td>
                             <td><%= r.employee || 'N/A' %></td>
+                            <td><% if (r.invoice_id) { %><a href="/orders/<%= r.invoice_id %>/edit">Edit</a><% } %></td>
                           </tr>
                         <% }) %>
                       </tbody>

@@ -479,6 +479,41 @@ app.get('/orders', pageAccess, async (req, res) => {
     });
   }
 });
+// EDIT / DELETE ONE ORDER (item 18): fixes a typo in a sale or restock. Flask corrects the stock.
+async function findOrder(id) {
+  const reply = await apiGet('/orders', { limit: 200 });
+  const rows = arrayData(Array.isArray(reply) ? reply : reply?.rows).map(normalizeOrder);
+  return rows.find(r => String(r.invoice_id) === String(id));
+}
+app.get('/orders/:id/edit', signedIn, async (req, res) => {
+  try {
+    const order = await findOrder(req.params.id);
+    if (!order) return errorPage(req, res, 404, 'Record not found', `Order #${req.params.id} isn't in the latest 200 orders.`);
+    return page(req, res, 'edit-order', { order });
+  } catch (err) {
+    return errorPage(req, res, 503, 'Could not load record', apiError(err, 'Unable to load order.'));
+  }
+});
+app.post('/orders/:id/edit', signedIn, async (req, res) => {
+  const back = `/orders/${encodeURIComponent(req.params.id)}/edit`;
+  try {
+    const result = await apiPut('/update/invoice', {
+      Invoice_ID: req.params.id,
+      Quantity_Change: req.body.Quantity_Change
+    });
+    return flashAndRedirect(req, res, result?.message || 'Order updated.', back);
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, 'Unable to update order.'), back);
+  }
+});
+app.post('/orders/:id/delete', managerOnly, async (req, res) => {
+  try {
+    const result = await apiRequest('DELETE', '/delete/invoice', { body: { Invoice_ID: req.params.id } });
+    return flashAndRedirect(req, res, result?.message || 'Order deleted.', '/orders');
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, 'Unable to delete order.'), `/orders/${encodeURIComponent(req.params.id)}/edit`);
+  }
+});
 app.get('/employees', pageAccess, async (req, res) => {
   try {
     const reply = await apiGet('/employees');
