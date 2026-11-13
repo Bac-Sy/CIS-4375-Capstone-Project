@@ -994,9 +994,9 @@ def add_product():
     error = run_write(mycon, query, params)
     if error:
         return db_error_response(mycon, error)
+    new_id = execute_read_query(mycon, "SELECT LAST_INSERT_ID() AS id")[0]["id"]
     mycon.close()
-    return jsonify({"message": "Product added!"}), 201
-
+    return jsonify({"message": "Product added!", "Product_ID": new_id}), 201
 @app.route('/api/products/<int:product_id>', methods=['PUT'])
 def update_product(product_id):
     data = request.json
@@ -1050,8 +1050,9 @@ def add_product_variant():
     error = run_write(mycon, query, params)
     if error:
         return db_error_response(mycon, error)
+    new_id = execute_read_query(mycon, "SELECT LAST_INSERT_ID() AS id")[0]["id"]
     mycon.close()
-    return jsonify({"message": "Product Variant added!"}), 201
+    return jsonify({"message": "Product Variant added!", "Variant_ID": new_id}), 201
 
 @app.route('/api/product_variants/<int:variant_id>', methods=['PUT'])
 def update_product_variant(variant_id):
