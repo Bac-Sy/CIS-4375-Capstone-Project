@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Edit Order' }); %>
+</head>
+
+<body>
+<div class="app">
+<%- include('../template/nav', { active: 'orders' }); %>
+
+<main class="content">
+<%- include('../template/topbar'); %>
+<%- include('../template/messages'); %>
+
+<header class="page-header">
+<h1>Edit Order #<%= order.invoice_id %></h1>
+</header>
+
+<section class="panel form-panel">
+
+<h2>Order Information</h2>
+
+<div class="mb-3">
+<p><strong>Invoice:</strong> #<%= order.invoice_id %></p>
+<p><strong>Date:</strong> <%= fmt.date(order.date) %></p>
+<p><strong>Transaction Type:</strong> <%= order.transaction_type %></p>
+<p><strong>Product:</strong> <%= order.product %></p>
+<p><strong>Size:</strong> <%= order.size %></p>
+<p><strong>Color:</strong> <%= order.color %></p>
+<p><strong>Employee:</strong> <%= order.employee || 'N/A' %></p>
+</div>
+
+<hr>
+
+<h2>Edit Quantity</h2>
+
+<form action="/orders/<%= order.invoice_id %>/edit"
+      method="POST"
+      data-confirm="Save changes to this order? Inventory will be adjusted."
+      data-confirm-button="Save Changes">
+
+<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+<div class="mb-3">
+<label for="Quantity_Change" class="form-label">
+Quantity Change
+</label>
+
+<input type="number"
+       class="form-control"
+       id="Quantity_Change"
+       name="Quantity_Change"
+       value="<%= order.quantity_change %>"
+       step="1"
+       required>
+
+<p>
+Enter a negative number for a Sale
+or a positive number for a Restock.
+</p>
+</div>
+
+<button type="submit" class="btn btn-primary">
+Save Changes
+</button>
+
+<a href="/orders" class="btn btn-outline-secondary">
+Cancel
+</a>
+
+</form>
+
+<!-- MANAGER-ONLY DELETE -->
+<% if (Role === 'Manager') { %>
+
+<hr>
+
+<form action="/orders/<%= order.invoice_id %>/delete"
+      method="POST"
+      data-confirm="Are you sure you want to delete this order? This will reverse its inventory change."
+      data-confirm-button="Delete"
+      data-confirm-style="danger">
+
+<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+<button type="submit" class="btn btn-outline-danger">
+Delete Order
+</button>
+
+</form>
+
+<% } %>
+
+</section>
+
+<%- include('../template/footer'); %>
+</main>
+</div>
+
+<%- include('../template/scripts'); %>
+<%- include('../template/confirm'); %>
+
+</body>
+</html>

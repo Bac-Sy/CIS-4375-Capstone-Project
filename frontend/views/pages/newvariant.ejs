@@ -1,0 +1,101 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <%- include('../template/head', { title: 'Add Variant' }) %>
+</head>
+<body>
+<div class="app">
+  <%- include('../template/nav', { active: 'manage' }) %>
+  <main class="content">
+    <%- include('../template/topbar') %>
+    <%- include('../template/messages') %>
+
+    <header class="page-header">
+      <h1>Add Size / Color Variant</h1>
+      <p>Product: <strong><%= product.Name %></strong></p>
+    </header>
+
+    <section class="panel form-panel">
+      <form action="/products/<%= product.Product_ID %>/variants"
+            method="POST"
+            data-confirm="Add this product variant?"
+            data-confirm-button="Add variant">
+
+        <input type="hidden" name="_csrf"
+               value="<%= csrfToken %>">
+
+        <div class="mb-3">
+          <label class="form-label" for="Size_ID">Size</label>
+          <select name="Size_ID" id="Size_ID"
+                  class="form-select" required>
+            <option value="">Select size</option>
+            <% sizes.forEach(function(s) { %>
+              <option value="<%= s.Size_ID %>"><%= s.Size %></option>
+            <% }); %>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="Color_ID">Color</label>
+          <select name="Color_ID" id="Color_ID"
+                  class="form-select" required>
+            <option value="">Select color</option>
+            <% colors.forEach(function(c) { %>
+              <option value="<%= c.Color_ID %>"><%= c.Color %></option>
+            <% }); %>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="Location_ID">Location</label>
+          <select name="Location_ID" id="Location_ID"
+                  class="form-select" required>
+            <option value="">Select location</option>
+            <% locations.forEach(function(l) { %>
+              <option value="<%= l.Location_ID %>">
+                <%= l.Location_Name %>
+              </option>
+            <% }); %>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="Price">Price</label>
+          <input type="number" name="Price" id="Price"
+                 class="form-control" min="0" step="0.01"
+                 required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="Cost">Cost</label>
+          <input type="number" name="Cost" id="Cost"
+                 class="form-control" min="0" step="0.01"
+                 required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="Quantity">
+            Starting quantity
+          </label>
+          <input type="number" name="Quantity" id="Quantity"
+                 class="form-control" min="0" step="1"
+                 value="0" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+          Add Variant and Stock
+        </button>
+        <a href="/manage" class="btn btn-outline-secondary">
+          Cancel
+        </a>
+      </form>
+    </section>
+
+    <%- include('../template/footer') %>
+  </main>
+</div>
+<%- include('../template/scripts') %>
+<%- include('../template/confirm') %>
+</body>
+</html>
