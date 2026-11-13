@@ -10,7 +10,7 @@ from sql import DBconnection, execute_read_query, execute_update_query
 # needed for password hashing
 from argon2 import PasswordHasher, exceptions
 from datetime import date
-from security import auth_secret, issue_token, install_auth
+from security import auth_secret, issue_token, install_auth, forget_employee
 from reporting import register_reporting_routes
 
 # Initialize Flask app
@@ -293,6 +293,8 @@ def updateEmployee():
             execute_update_query(mycon,sql)
     
     mycon.close()
+    #clears the remembered login info so a role change takes effect right away
+    forget_employee()
     return jsonify({'message': 'Employee information was successfully updated.'})
 
 #Delete
@@ -320,6 +322,8 @@ def deleteEmployee():
     sql2 = "delete from Employee where Email = '%s' " % (email)
     execute_update_query(mycon,sql2)
     mycon.close()
+    #clears the remembered login info so the deleted employee is logged out right away
+    forget_employee(employeeID)
     return jsonify({'message' : 'Employee deleted from the system.'})
 # Below is the API for the login system
 @app.route('/login', methods=['POST'])

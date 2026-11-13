@@ -108,25 +108,14 @@ function normalizeUser(raw = {}) {
 
 // Old templates expect FirstName/Role, newer templates expect user/fmt/api.
 // Accounts authenticated through the modern API are revalidated on each request.
+// The employee info is saved in the session at login and trusted until the session expires
+// (8 hours, the same as the API token), so pages don't re-check the login with Flask.
+// Flask still checks the token on every API call, so nobody can use the API without logging in.
 app.use(async (req, res, next) => {
-  if (req.session.user?.id) {
-    try {
-      if (!req.session.apiToken) throw new Error('Missing API authentication token');
-      const verified = normalizeUser(await apiGet('/auth/me'));
-      if (!verified || verified.id !== req.session.user.id) {
-        throw new Error('Employee session no longer valid');
-      }
-      req.session.user = verified;
-    } catch (err) {
-      // Only log out when the login is really invalid (Flask said 401, or the token/user is missing or wrong).
-      // If Flask is just slow or down (timeout, 503), keep the user logged in; the page shows its "unavailable" message.
-      const loginInvalid = !(err instanceof ApiError) || err.status === 401;
-      if (loginInvalid) {
-        delete req.session.user;
-        delete req.session.apiToken;
-        delete req.session.authMode;
-      }
-    }
+  if (req.session.user?.id && !req.session.apiToken) {
+    // A session without a token can't call the API, so treat it as logged out.
+    delete req.session.user;
+    delete req.session.authMode;
   }
   const user = req.session.user || guestUser;
   res.locals.user = user;
@@ -194,6 +183,14 @@ async function apiRequest(method, endpoint, { body, query, timeoutMs = 10000 } =
   let data = null;
   try { data = raw ? JSON.parse(raw) : null; } catch (_) { /* Unexpected non-JSON response. */ }
   if (!response.ok) {
+    // Flask rejected the login token (expired or the account was deleted): log out of the session too,
+    // so the next page goes to the login screen instead of showing errors.
+    const session = requestContext.getStore()?.session;
+    if (response.status === 401 && session?.apiToken && !/^\/(auth\/)?login$/.test(endpoint)) {
+      delete session.user;
+      delete session.apiToken;
+      delete session.authMode;
+    }
     throw new ApiError(
       data?.message || data?.error || `Flask returned HTTP ${response.status}`,
       response.status, data

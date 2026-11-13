@@ -15,6 +15,19 @@ from flask import g, jsonify, request
 TOKEN_AGE_SECONDS = 8 * 60 * 60
 PUBLIC_ENDPOINTS = frozenset({'/health', '/login', '/auth/login'})
 
+# Employee_ID -> (employee row, time it expires). Role changes or deleted accounts
+# take effect within this many seconds; updating or deleting an employee clears it right away.
+EMPLOYEE_CACHE_SECONDS = 60
+_employee_cache = {}
+
+
+def forget_employee(employee_id=None):
+    """Clear the cached login info for one employee, or everyone (None)."""
+    if employee_id is None:
+        _employee_cache.clear()
+    else:
+        _employee_cache.pop(int(employee_id), None)
+
 
 def auth_secret():
     value = os.getenv('AUTH_TOKEN_SECRET', '')
@@ -75,22 +88,30 @@ def install_auth(app, connect, read_query):
         employee_id = verify_token(authorization[7:])
         if employee_id is None:
             return jsonify({'message': 'Session expired or invalid. Log in again.'}), 401
-        con = connect()
-        if con is None:
-            return jsonify({'message': 'Database unavailable.'}), 503
-        try:
-            matches = read_query(con,
-                'SELECT Employee_ID, First_Name, Last_Name, Username, Email, Role '
-                'FROM Employee WHERE Employee_ID=%s', (employee_id,))
-        except Exception:
-            app.logger.exception('Authentication database query failed')
-            return jsonify({'message': 'Authentication database unavailable.'}), 503
-        finally:
-            con.close()
-        if matches is None:
-            return jsonify({'message': 'Authentication database unavailable.'}), 503
-        if not matches:
-            return jsonify({'message': 'Employee account no longer exists.'}), 401
+        # A page makes several API calls at once, so the employee lookup is remembered for
+        # EMPLOYEE_CACHE_SECONDS instead of querying the database on every call.
+        cached = _employee_cache.get(employee_id)
+        if cached and cached[1] > time.monotonic():
+            matches = [cached[0]]
+        else:
+            con = connect()
+            if con is None:
+                return jsonify({'message': 'Database unavailable.'}), 503
+            try:
+                matches = read_query(con,
+                    'SELECT Employee_ID, First_Name, Last_Name, Username, Email, Role '
+                    'FROM Employee WHERE Employee_ID=%s', (employee_id,))
+            except Exception:
+                app.logger.exception('Authentication database query failed')
+                return jsonify({'message': 'Authentication database unavailable.'}), 503
+            finally:
+                con.close()
+            if matches is None:
+                return jsonify({'message': 'Authentication database unavailable.'}), 503
+            if not matches:
+                _employee_cache.pop(employee_id, None)
+                return jsonify({'message': 'Employee account no longer exists.'}), 401
+            _employee_cache[employee_id] = (matches[0], time.monotonic() + EMPLOYEE_CACHE_SECONDS)
         g.employee = matches[0]
         is_manager = str(g.employee.get('Role', '')).casefold() == 'manager'
         if request.method == 'DELETE' and not is_manager:
