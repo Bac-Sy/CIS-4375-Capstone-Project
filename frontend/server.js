@@ -478,6 +478,36 @@ app.get('/orders', pageAccess, async (req, res) => {
   }
 });
 
+// BEST SELLERS REPORT: ranks products and items by how many sold (Flask /report/best/sellers).
+// ?days=7, 30 or 90 limits it to recent sales; no days (or 0) means all time.
+const reportPeriods = [
+  { days: 7, label: 'Last 7 days' },
+  { days: 30, label: 'Last 30 days' },
+  { days: 90, label: 'Last 90 days' },
+  { days: 0, label: 'All time' }
+];
+app.get('/reports/best-sellers', pageAccess, async (req, res) => {
+  const requested = Number(req.query.days ?? 30);
+  const days = reportPeriods.some(p => p.days === requested) ? requested : 30;
+  const view = req.query.view === 'item' ? 'item' : 'product';
+  const fallback = { days, view, periods: reportPeriods, byProduct: [], byItem: [], totalUnits: 0, totalRevenue: 0, dataAvailable: false };
+  try {
+    // 30 seconds instead of the usual 10: the report runs two bigger queries and the AWS database can be slow.
+    const reply = await apiRequest('GET', '/report/best/sellers', { query: { days }, timeoutMs: 30000 });
+    return page(req, res, 'bestsellers', {
+      ...fallback,
+      byProduct: arrayData(reply?.by_product),
+      byItem: arrayData(reply?.by_item),
+      totalUnits: Number(reply?.total_units) || 0,
+      totalRevenue: Number(reply?.total_revenue) || 0,
+      dataAvailable: true
+    });
+  } catch (err) {
+    return page(req, res, 'bestsellers', {
+      ...fallback, message: apiError(err, 'The best sellers report is unavailable.')
+    });
+  }
+});
 
 app.get('/new/transaction', signedIn, async (req, res) => {
   try {

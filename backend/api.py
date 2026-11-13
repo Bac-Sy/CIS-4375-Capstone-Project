@@ -1132,6 +1132,88 @@ def delete_inventory(inventory_id):
     return jsonify({"message": "Inventory record deleted!"}), 200
 
 
+#Below is the API for the best sellers report.
+#It counts how many of each item sold (Sale invoices only) and ranks them from the most sold to the least.
+#It returns two lists: by_product (all sizes and colors added together) and by_item (each size and color separately).
+#Items that haven't sold are included at the bottom with 0, so the owner can also see what isn't selling.
+#Optional: ?days=30 only counts sales from the last 30 days. Leave it out (or days=0) for all time.
+@app.route('/report/best/sellers', methods = ['GET'])
+def bestSellers():
+    try:
+        days = int(request.args.get('days', 0))
+    except ValueError:
+        return jsonify({'message': 'days must be a whole number.'}), 400
+    if days < 0:
+        return jsonify({'message': 'days cannot be negative.'}), 400
+
+    #Sales are saved as negative Quantity_Change (a sale of 3 is -3), so -SUM gives the number sold.
+    dateFilter = ''
+    params = ()
+    if days > 0:
+        dateFilter = 'and i.Date >= %s'
+        from datetime import timedelta
+        params = (date.today() - timedelta(days = days - 1),)
+    salesPerVariant = """select i.Variant_ID, -sum(i.Quantity_Change) as Units
+        from Invoice i
+        join Transaction_Type t on t.Transaction_Type_ID = i.Transaction_Type_ID
+        where t.Transaction_Type = 'Sale' and i.Quantity_Change < 0 """ + dateFilter + """
+        group by i.Variant_ID"""
+
+    mycon = get_connection()
+    if mycon is None:
+        return jsonify({'message': 'Database unavailable.'}), 503
+
+    sql = """select p.Product_ID, p.Name as Product, c.Category,
+            coalesce(sum(sales.Units), 0) as Units_Sold,
+            coalesce(sum(sales.Units * v.Price), 0) as Revenue
+        from Product p
+        join Category c on c.Category_ID = p.Category_ID
+        left join Product_Variant v on v.Product_ID = p.Product_ID
+        left join (""" + salesPerVariant + """) sales on sales.Variant_ID = v.Variant_ID
+        group by p.Product_ID, p.Name, c.Category
+        order by Units_Sold desc, Revenue desc, p.Name"""
+    byProduct = execute_read_query(mycon, sql, params)
+
+    sql2 = """select v.Variant_ID, p.Name as Product, s.Size, co.Color, v.Price,
+            coalesce(sales.Units, 0) as Units_Sold,
+            coalesce(sales.Units, 0) * v.Price as Revenue
+        from Product_Variant v
+        join Product p on p.Product_ID = v.Product_ID
+        join Size s on s.Size_ID = v.Size_ID
+        join Color co on co.Color_ID = v.Color_ID
+        left join (""" + salesPerVariant + """) sales on sales.Variant_ID = v.Variant_ID
+        order by Units_Sold desc, Revenue desc, p.Name, s.Size, co.Color"""
+    byItem = execute_read_query(mycon, sql2, params)
+    mycon.close()
+
+    if byProduct is None or byItem is None:
+        return jsonify({'message': 'The best sellers report could not be loaded.'}), 503
+
+    #Give each row a rank. Items that sold the same amount share a rank (1, 2, 2, 4).
+    for rows in (byProduct, byItem):
+        rank = 0
+        previousUnits = None
+        for position, row in enumerate(rows, start = 1):
+            row['Units_Sold'] = int(row['Units_Sold'])
+            row['Revenue'] = float(row['Revenue'])
+            if 'Price' in row:
+                row['Price'] = float(row['Price'])
+            if row['Units_Sold'] != previousUnits:
+                rank = position
+                previousUnits = row['Units_Sold']
+            row['Rank'] = rank
+
+    totalUnits = sum(row['Units_Sold'] for row in byProduct)
+    totalRevenue = sum(row['Revenue'] for row in byProduct)
+    return jsonify({
+        'days' : days,
+        'total_units' : totalUnits,
+        'total_revenue' : totalRevenue,
+        'by_product' : byProduct,
+        'by_item' : byItem
+    }), 200
+
+
 # Add reporting endpoints, then protect all routes except health/login.
 register_reporting_routes(app, get_db_connection, execute_read_query)
 install_auth(app, get_db_connection, execute_read_query)
