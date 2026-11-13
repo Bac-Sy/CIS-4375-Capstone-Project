@@ -305,7 +305,8 @@ async function login(req, res) {
     let successfulEndpoint = null;
     for (const [endpoint, body] of candidates) {
       try {
-        reply = await apiPost(endpoint, body);
+        // Login gets 30 seconds instead of the usual 10: connecting to the AWS database can be slow at times.
+        reply = await apiRequest('POST', endpoint, { body, timeoutMs: 30000 });
         successfulEndpoint = endpoint;
         break;
       } catch (err) {
