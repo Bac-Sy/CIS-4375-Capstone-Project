@@ -540,6 +540,62 @@ app.get('/settings', pageAccess, (req, res) => page(req, res, 'settings', {
 // Manager catalog index makes the five existing edit pages discoverable.
 app.get('/manage', managerOnly, async (req, res) => {
   try {
+    const [suppliers, categories, locations, products, variants, colors, sizes] = await Promise.all([
+      apiGet('/api/suppliers'), apiGet('/api/categories'), apiGet('/api/locations'),
+      apiGet('/api/products'), apiGet('/api/product_variants'),
+      apiGet('/show/all/colors'), apiGet('/show/all/sizes')
+    ]);
+    return page(req, res, 'manage', {
+      suppliers, categories, locations, products, variants,
+      colors: arrayData(colors), sizes: arrayData(sizes)
+    });
+  } catch (err) {
+    return errorPage(req, res, 503, 'Catalog unavailable', apiError(err, 'Unable to load the catalog.'));
+  }
+});
+
+// ADD / RENAME catalog lookups from Manage catalog (item 16). The Flask routes already exist.
+const catalogAdds = {
+  suppliers: { endpoint: '/api/suppliers', fields: ['Name', 'Email', 'Phone'], label: 'Supplier' },
+  categories: { endpoint: '/api/categories', fields: ['Category'], label: 'Category' },
+  locations: { endpoint: '/api/locations', fields: ['Location_Name'], label: 'Location' },
+  colors: { endpoint: '/create/color', fields: ['Color'], label: 'Color' },
+  sizes: { endpoint: '/create/size', fields: ['Size'], label: 'Size' }
+};
+app.post('/manage/add/:kind', managerOnly, async (req, res) => {
+  const config = catalogAdds[req.params.kind];
+  if (!config) return errorPage(req, res, 404, 'Page not found', 'The requested page does not exist.');
+  const body = {};
+  for (const field of config.fields) {
+    const value = String(req.body[field] ?? '').trim();
+    body[field] = value === '' ? null : value;   // empty email/phone saved as blank, not ""
+  }
+  try {
+    const result = await apiPost(config.endpoint, body);
+    return flashAndRedirect(req, res, result?.message || `${config.label} added.`, '/manage');
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, `Unable to add ${config.label.toLowerCase()}.`), '/manage');
+  }
+});
+const catalogRenames = {
+  colors: { endpoint: '/update/color', id: 'Color_ID', field: 'Color', label: 'Color' },
+  sizes: { endpoint: '/update/size', id: 'Size_ID', field: 'Size', label: 'Size' }
+};
+app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
+  const config = catalogRenames[req.params.kind];
+  if (!config) return errorPage(req, res, 404, 'Page not found', 'The requested page does not exist.');
+  try {
+    const result = await apiPut(config.endpoint, {
+      [config.id]: req.params.id, [config.field]: String(req.body.Name ?? '').trim()
+    });
+    return flashAndRedirect(req, res, result?.message || `${config.label} updated.`, '/manage');
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, `Unable to update ${config.label.toLowerCase()}.`), '/manage');
+  }
+});
+
+app.get('/manage', managerOnly, async (req, res) => {
+  try {
     const [suppliers, categories, locations, products, variants] = await Promise.all([
       apiGet('/api/suppliers'), apiGet('/api/categories'), apiGet('/api/locations'),
       apiGet('/api/products'), apiGet('/api/product_variants')
