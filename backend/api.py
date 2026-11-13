@@ -9,6 +9,7 @@ from sql import DBconnection, execute_read_query, execute_update_query
 
 # needed for password hashing
 from argon2 import PasswordHasher, exceptions
+from datetime import date
 from security import auth_secret, issue_token, install_auth
 from reporting import register_reporting_routes
 
@@ -449,7 +450,8 @@ def createInvoice():
         mycon.close()
         return jsonify({'message' : 'There is not enough stock to complete this request. %s items are in stock.' % (currentStock)}), 400
     #This updates the inventoy amount based on the amount added or removed
-    sql4 = "insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values ('%s', '%s', CURDATE(), '%s', '%s')" % (transactionTypeID, quantityChange, variantID, employeeID)
+    sql4 = "insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values ('%s', '%s', '%s', '%s', '%s')" % (transactionTypeID, quantityChange, date.today(), variantID, employeeID)
+    # date.today() uses this computer's date. CURDATE() used the database's UTC clock, so evening sales were saved as tomorrow.
     execute_update_query(mycon, sql4)
     sql5 = "update Inventory set Quantity = Quantity + %s where Variant_ID = '%s'" % (quantityChange, variantID)
     execute_update_query(mycon, sql5)
@@ -598,8 +600,8 @@ def adjustInventory():
             return jsonify({'message': 'Adjustment transaction type is missing.'}), 503
         cursor.execute("""INSERT INTO Invoice
             (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID)
-            VALUES (%s, %s, CURDATE(), %s, %s)""",
-            (adjustment['Transaction_Type_ID'], difference, variant_id, employee_id))
+            VALUES (%s, %s, %s, %s, %s)""",
+            (adjustment['Transaction_Type_ID'], difference, date.today(), variant_id, employee_id))
         cursor.execute('UPDATE Inventory SET Quantity=%s WHERE Variant_ID=%s', (new_quantity, variant_id))
         con.commit()
         return jsonify({'message': f'Stock updated from {current} to {new_quantity}.'}), 200
@@ -994,9 +996,9 @@ def add_product():
     error = run_write(mycon, query, params)
     if error:
         return db_error_response(mycon, error)
+    new_id = execute_read_query(mycon, "SELECT LAST_INSERT_ID() AS id")[0]["id"]
     mycon.close()
-    return jsonify({"message": "Product added!"}), 201
-
+    return jsonify({"message": "Product added!", "Product_ID": new_id}), 201
 @app.route('/api/products/<int:product_id>', methods=['PUT'])
 def update_product(product_id):
     data = request.json
@@ -1050,8 +1052,9 @@ def add_product_variant():
     error = run_write(mycon, query, params)
     if error:
         return db_error_response(mycon, error)
+    new_id = execute_read_query(mycon, "SELECT LAST_INSERT_ID() AS id")[0]["id"]
     mycon.close()
-    return jsonify({"message": "Product Variant added!"}), 201
+    return jsonify({"message": "Product Variant added!", "Variant_ID": new_id}), 201
 
 @app.route('/api/product_variants/<int:variant_id>', methods=['PUT'])
 def update_product_variant(variant_id):
