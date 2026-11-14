@@ -39,10 +39,16 @@
       ] },
     { label: 'Colors', path: 'colors', key: 'Color_ID', text: 'Color', items: list(colors), rename: true,
       add: [{ name: 'Color', label: 'Color name', required: true }],
-      menu: c => [{ label: 'Rename', href: '/manage?rename=colors-' + c.Color_ID + '#colors', icon: 'edit' }] },
+      menu: c => [
+        { label: 'Rename', href: '/manage?rename=colors-' + c.Color_ID + '#colors', icon: 'edit' },
+        { label: 'Delete color', action: '/manage/delete/colors/' + c.Color_ID, icon: 'delete', danger: true, confirm: 'Delete the color ' + c.Color + '? Colors used by a product can\u2019t be deleted.', confirmButton: 'Delete color' }
+      ] },
     { label: 'Sizes', path: 'sizes', key: 'Size_ID', text: 'Size', items: list(sizes), rename: true,
       add: [{ name: 'Size', label: 'Size name', required: true }],
-      menu: s => [{ label: 'Rename', href: '/manage?rename=sizes-' + s.Size_ID + '#sizes', icon: 'edit' }] }
+      menu: s => [
+        { label: 'Rename', href: '/manage?rename=sizes-' + s.Size_ID + '#sizes', icon: 'edit' },
+        { label: 'Delete size', action: '/manage/delete/sizes/' + s.Size_ID, icon: 'delete', danger: true, confirm: 'Delete the size ' + s.Size + '? Sizes used by a product can\u2019t be deleted.', confirmButton: 'Delete size' }
+      ] }
   ];
 %>
 <!doctype html>

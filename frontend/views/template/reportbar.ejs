@@ -23,7 +23,7 @@
   </div>
   <% } %>
 </header>
-<nav class="tabs no-print" aria-label="Reports">
+<nav class="report-tabs no-print" aria-label="Reports">
   <% reportTabs.forEach(function(t) { %>
     <a href="<%= t[2] %>" class="<%= barKey === t[0] ? 'active' : '' %>"<% if (barKey === t[0]) { %> aria-current="page"<% } %>><%= t[1] %></a>
   <% }); %>

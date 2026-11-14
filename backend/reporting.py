@@ -202,6 +202,11 @@ def register_reporting_routes(app, connect, read_query):
             return jsonify({'message': 'The start date must be on or before the end date.'}), 400
         if (end - start).days > 3660:
             return jsonify({'message': 'Choose a range of 10 years or less.'}), 400
+        # optional: only one product's sales (the Best sellers report links here)
+        try:
+            product_id = int(request.args['product_id']) if request.args.get('product_id') else None
+        except ValueError:
+            return jsonify({'message': 'product_id must be a whole number.'}), 400
         sales = fetch('''
             SELECT i.Invoice_ID AS invoice_id, i.Date AS date,
                    p.Product_ID AS product_id, p.Name AS product, c.Category AS category,
@@ -218,8 +223,9 @@ def register_reporting_routes(app, connect, read_query):
             JOIN Employee e ON e.Employee_ID = i.Employee_ID
             WHERE t.Transaction_Type = 'Sale' AND i.Quantity_Change < 0
               AND i.Date >= %s AND i.Date <= %s
+              AND (%s IS NULL OR p.Product_ID = %s)
             ORDER BY i.Date DESC, i.Invoice_ID DESC
-        ''', (start, end))
+        ''', (start, end, product_id, product_id))
         by_product, by_category, by_day = {}, {}, {}
         summary = {'revenue': 0.0, 'units': 0, 'sales': len(sales), 'cost': 0.0}
         for row in sales:

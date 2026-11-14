@@ -33,7 +33,22 @@
                       <div class="kv"><span>Username</span><strong><%= user.username %></strong></div>
                       <div class="kv"><span>Email</span><strong><%= user.email || 'N/A' %></strong></div>
                       <div class="kv"><span>Role</span><strong><%= user.role || 'N/A' %></strong></div>
-                      <p class="hint" style="margin-top:.8rem">To change your name, email or role, ask a manager (Employees → ⋯ → Edit employee).</p>
+                      <% if (isManager) { %>
+                        <p class="hint" style="margin-top:.8rem"><a href="/employees/<%= user.id %>/edit">Edit my details</a> (name, username, email)</p>
+                      <% } else { %>
+                        <p class="hint" style="margin-top:.8rem">Need to change your name, email or role? Ask a manager to update your account.</p>
+                      <% } %>
+                    </section>
+
+                    <section class="card" aria-labelledby="appearanceTitle">
+                      <h2 id="appearanceTitle">Appearance</h2>
+                      <fieldset class="theme-choices">
+                        <legend class="visually-hidden">Theme</legend>
+                        <label><input type="radio" name="theme-choice" value="light"> Light</label>
+                        <label><input type="radio" name="theme-choice" value="dark"> Dark</label>
+                        <label><input type="radio" name="theme-choice" value="system"> Match my computer</label>
+                      </fieldset>
+                      <p class="hint" style="margin-top:.6rem">Saved on this computer. The moon / sun button at the bottom of the menu switches it too. Reports and PDFs always print in light.</p>
                     </section>
 
                     <section class="card" aria-labelledby="signedInTitle">

@@ -21,10 +21,16 @@
     <%- include('../template/reportbar', { reportKey: 'inventory', reportTitle: showLow ? 'Inventory report: low stock' : 'Inventory report',
          reportSubtitle: 'Stock on hand as of ' + generatedOn, exportHref: '/reports/inventory' + (showLow ? '?low=1' : '') }) %>
 
-    <nav class="tabs no-print" aria-label="Which items">
-      <a href="/reports/inventory" class="<%= showLow ? '' : 'active' %>"<% if (!showLow) { %> aria-current="page"<% } %>>All items</a>
-      <a href="/reports/inventory?low=1" class="<%= showLow ? 'active' : '' %>"<% if (showLow) { %> aria-current="page"<% } %>>Low and out of stock (reorder list)</a>
-    </nav>
+    <!-- Filters for this report (the tabs above switch reports) -->
+    <section class="filter-bar no-print" aria-label="Filter this report">
+      <div class="filter-group">
+        <span class="filter-label">Show</span>
+        <nav class="pills" aria-label="Which items">
+          <a href="/reports/inventory" class="<%= showLow ? '' : 'active' %>"<% if (!showLow) { %> aria-current="page"<% } %>>All items</a>
+          <a href="/reports/inventory?low=1" class="<%= showLow ? 'active' : '' %>"<% if (showLow) { %> aria-current="page"<% } %>>Low and out of stock (reorder list)</a>
+        </nav>
+      </div>
+    </section>
 
     <% if (t) { %>
     <% if (showLow) { %><p class="empty" style="margin:-0.4rem 0 0.6rem">Totals below are for all stock; the table lists only low and out of stock items.</p><% } %>

@@ -35,10 +35,15 @@
                   <span class="muted">Items with <%= lowStockThreshold %> or fewer units are highlighted as low stock.</span>
                 </header>
 
-                <nav class="tabs" aria-label="Filter inventory">
-                  <a href="/inventory" class="<%= showLowOnly ? '' : 'active' %>"<% if (!showLowOnly) { %> aria-current="page"<% } %>>All items</a>
-                  <a href="/inventory?low=1" class="<%= showLowOnly ? 'active' : '' %>"<% if (showLowOnly) { %> aria-current="page"<% } %>>Low stock only (<%= lowTotal %>)</a>
-                </nav>
+                <section class="filter-bar" aria-label="Filter inventory">
+                  <div class="filter-group">
+                    <span class="filter-label">Show</span>
+                    <nav class="pills" aria-label="Which items">
+                      <a href="/inventory" class="<%= showLowOnly ? '' : 'active' %>"<% if (!showLowOnly) { %> aria-current="page"<% } %>>All items</a>
+                      <a href="/inventory?low=1" class="<%= showLowOnly ? 'active' : '' %>"<% if (showLowOnly) { %> aria-current="page"<% } %>>Low stock only (<%= lowTotal %>)</a>
+                    </nav>
+                  </div>
+                </section>
 
                 <section class="panel">
                   <div class="panel-bar">

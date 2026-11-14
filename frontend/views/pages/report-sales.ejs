@@ -17,22 +17,35 @@
     <%- include('../template/topbar') %>
     <%- include('../template/messages') %>
 
-    <%- include('../template/reportbar', { reportKey: 'sales', reportTitle: 'Sales report', reportSubtitle: rangeText, exportHref: '/reports/sales?' + query }) %>
+    <%- include('../template/reportbar', { reportKey: 'sales', reportTitle: 'Sales report', reportSubtitle: rangeText + (typeof productName !== 'undefined' && productName ? ' · ' + productName : ''), exportHref: '/reports/sales?' + query + (typeof productId !== 'undefined' && productId ? '&product=' + productId : '') }) %>
 
-    <form class="range-form no-print" method="GET" action="/reports/sales" aria-label="Choose the dates">
-      <nav class="tabs" aria-label="Quick ranges" style="margin:0">
-        <% ranges.forEach(function(r) { %>
-          <a href="/reports/sales?range=<%= r.key %>" class="<%= rangeKey === r.key ? 'active' : '' %>"<% if (rangeKey === r.key) { %> aria-current="page"<% } %>><%= r.label %></a>
-        <% }); %>
-      </nav>
-      <div class="range-dates">
-        <label for="from" class="form-label">From</label>
-        <input type="date" id="from" name="from" class="form-control" value="<%= from %>" required>
-        <label for="to" class="form-label">To</label>
-        <input type="date" id="to" name="to" class="form-control" value="<%= to %>" required>
-        <button type="submit" class="btn btn-primary">Show</button>
+    <% const onlyProduct = typeof productId !== 'undefined' && productId ? productId : ''; %>
+    <!-- Filters for this report (the tabs above switch reports) -->
+    <section class="filter-bar no-print" aria-label="Filter this report">
+      <div class="filter-group">
+        <span class="filter-label">Period</span>
+        <nav class="pills" aria-label="Quick ranges">
+          <% ranges.forEach(function(r) { %>
+            <a href="/reports/sales?range=<%= r.key %><%= onlyProduct ? '&product=' + onlyProduct : '' %>" class="<%= rangeKey === r.key ? 'active' : '' %>"<% if (rangeKey === r.key) { %> aria-current="page"<% } %>><%= r.label %></a>
+          <% }); %>
+        </nav>
+        <form class="filter-dates" method="GET" action="/reports/sales">
+          <% if (onlyProduct) { %><input type="hidden" name="product" value="<%= onlyProduct %>"><% } %>
+          <label for="from">From</label>
+          <input type="date" id="from" name="from" class="form-control form-control-sm" value="<%= from %>" required>
+          <label for="to">To</label>
+          <input type="date" id="to" name="to" class="form-control form-control-sm" value="<%= to %>" required>
+          <button type="submit" class="btn btn-sm <%= rangeKey === 'custom' ? 'btn-primary' : 'btn-outline-secondary' %>">Show</button>
+        </form>
       </div>
-    </form>
+      <% if (onlyProduct) { %>
+        <div class="filter-group">
+          <span class="filter-label">Product</span>
+          <span class="filter-chip"><%= productName %> <a href="/reports/sales?from=<%= from %>&to=<%= to %>" aria-label="Show all products">✕</a></span>
+          <a href="/reports/sales?from=<%= from %>&to=<%= to %>" class="filter-clear">Show all products</a>
+        </div>
+      <% } %>
+    </section>
 
     <% if (s) { %>
     <section class="stat-row" aria-label="Summary">

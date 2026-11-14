@@ -27,24 +27,25 @@
 
     <%- include('../template/reportbar', { reportKey: 'history', reportTitle: 'Edit history', reportSubtitle: subtitle, exportHref: '/reports/history?' + qs() }) %>
 
-    <form class="range-form no-print" method="GET" action="/reports/history" aria-label="Filter the history">
-      <div class="range-dates">
-        <label for="area" class="form-label">Type</label>
-        <select id="area" name="area" class="form-select" style="width:auto">
+    <!-- Filters for this report (the tabs above switch reports) -->
+    <form class="filter-bar no-print" method="GET" action="/reports/history" aria-label="Filter the history">
+      <div class="filter-group filter-dates">
+        <label for="area" class="filter-label">Type</label>
+        <select id="area" name="area" class="form-select form-select-sm" style="width:auto">
           <option value="">All changes</option>
           <% areas.forEach(function(a) { %><option value="<%= a %>" <%= area === a ? 'selected' : '' %>><%= a %></option><% }); %>
         </select>
-        <label for="employee" class="form-label">Who</label>
-        <select id="employee" name="employee" class="form-select" style="width:auto">
+        <label for="employee" class="filter-label">Who</label>
+        <select id="employee" name="employee" class="form-select form-select-sm" style="width:auto">
           <option value="">Everyone</option>
           <% people.forEach(function(p) { %><option value="<%= p.id %>" <%= employee === String(p.id) ? 'selected' : '' %>><%= p.name %></option><% }); %>
         </select>
-        <label for="from" class="form-label">From</label>
-        <input type="date" id="from" name="from" class="form-control" value="<%= from %>">
-        <label for="to" class="form-label">To</label>
-        <input type="date" id="to" name="to" class="form-control" value="<%= to %>">
-        <button type="submit" class="btn btn-primary">Show</button>
-        <% if (area || employee || from || to) { %><a href="/reports/history" class="btn btn-outline-secondary">Clear</a><% } %>
+        <label for="from" class="filter-label">From</label>
+        <input type="date" id="from" name="from" class="form-control form-control-sm" value="<%= from %>">
+        <label for="to" class="filter-label">To</label>
+        <input type="date" id="to" name="to" class="form-control form-control-sm" value="<%= to %>">
+        <button type="submit" class="btn btn-sm btn-primary">Show</button>
+        <% if (area || employee || from || to) { %><a href="/reports/history" class="filter-clear">Clear filters</a><% } %>
       </div>
     </form>
 

@@ -1241,14 +1241,28 @@ def bestSellers():
     if days < 0:
         return jsonify({'message': 'days cannot be negative.'}), 400
 
+    #A custom range (?from=YYYY-MM-DD&to=YYYY-MM-DD) takes the place of days.
+    try:
+        rangeStart = date.fromisoformat(request.args['from']) if request.args.get('from') else None
+        rangeEnd = date.fromisoformat(request.args['to']) if request.args.get('to') else None
+    except ValueError:
+        return jsonify({'message': 'from and to must be dates (YYYY-MM-DD).'}), 400
+    if rangeStart and rangeEnd and rangeStart > rangeEnd:
+        return jsonify({'message': 'The start date must be on or before the end date.'}), 400
+
     #Sales are saved as negative Quantity_Change (a sale of 3 is -3), so -SUM gives the number sold.
+    #First_Sold / Last_Sold are the first and last day each item sold in the period.
     dateFilter = ''
     params = ()
-    if days > 0:
+    if rangeStart or rangeEnd:
+        dateFilter = 'and i.Date >= %s and i.Date <= %s'
+        params = (rangeStart or date(2000, 1, 1), rangeEnd or date.today())
+    elif days > 0:
         dateFilter = 'and i.Date >= %s'
         from datetime import timedelta
         params = (date.today() - timedelta(days = days - 1),)
-    salesPerVariant = """select i.Variant_ID, -sum(i.Quantity_Change) as Units
+    salesPerVariant = """select i.Variant_ID, -sum(i.Quantity_Change) as Units,
+            min(i.Date) as First_Sold, max(i.Date) as Last_Sold
         from Invoice i
         join Transaction_Type t on t.Transaction_Type_ID = i.Transaction_Type_ID
         where t.Transaction_Type = 'Sale' and i.Quantity_Change < 0 """ + dateFilter + """
@@ -1260,7 +1274,8 @@ def bestSellers():
 
     sql = """select p.Product_ID, p.Name as Product, c.Category,
             coalesce(sum(sales.Units), 0) as Units_Sold,
-            coalesce(sum(sales.Units * v.Price), 0) as Revenue
+            coalesce(sum(sales.Units * v.Price), 0) as Revenue,
+            min(sales.First_Sold) as First_Sold, max(sales.Last_Sold) as Last_Sold
         from Product p
         join Category c on c.Category_ID = p.Category_ID
         left join Product_Variant v on v.Product_ID = p.Product_ID
@@ -1271,7 +1286,8 @@ def bestSellers():
 
     sql2 = """select v.Variant_ID, p.Name as Product, s.Size, co.Color, v.Price,
             coalesce(sales.Units, 0) as Units_Sold,
-            coalesce(sales.Units, 0) * v.Price as Revenue
+            coalesce(sales.Units, 0) * v.Price as Revenue,
+            sales.First_Sold, sales.Last_Sold, p.Product_ID
         from Product_Variant v
         join Product p on p.Product_ID = v.Product_ID
         join Size s on s.Size_ID = v.Size_ID
@@ -1293,6 +1309,8 @@ def bestSellers():
             row['Revenue'] = float(row['Revenue'])
             if 'Price' in row:
                 row['Price'] = float(row['Price'])
+            for key in ('First_Sold', 'Last_Sold'):
+                row[key] = str(row[key])[:10] if row.get(key) else None
             if row['Units_Sold'] != previousUnits:
                 rank = position
                 previousUnits = row['Units_Sold']

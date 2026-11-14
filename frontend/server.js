@@ -591,31 +591,43 @@ const reportPeriods = [
 ];
 app.get('/reports/best-sellers', pageAccess, async (req, res) => {
   const requested = Number(req.query.days ?? 30);
-  const days = reportPeriods.some(p => p.days === requested) ? requested : 30;
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
+  // a custom From / To range, or one of the preset periods
+  let from = validDate(req.query.from) ? String(req.query.from) : '';
+  let to = validDate(req.query.to) ? String(req.query.to) : '';
+  if (from && to && from > to) [from, to] = [to, from];
+  const custom = Boolean(from && to);
+  const days = custom ? null : (reportPeriods.some(p => p.days === requested) ? requested : 30);
   const view = req.query.view === 'item' ? 'item' : 'product';
-  const fallback = { days, view, periods: reportPeriods, byProduct: [], byItem: [], totalUnits: 0, totalRevenue: 0, dataAvailable: false };
+  // the Sales report dates for each product's link (all time: from that product's first sale)
+  const today = localToday();
+  const salesFrom = custom ? from : (days ? isoDate(new Date(Date.now() - (days - 1) * 86400000)) : '');
+  const salesTo = custom ? to : today;
+  const fallback = { days, view, custom, from, to, salesFrom, salesTo, periods: reportPeriods, byProduct: [], byItem: [], totalUnits: 0, totalRevenue: 0, dataAvailable: false };
   try {
     // 30 seconds instead of the usual 10: the report runs two bigger queries and the AWS database can be slow.
-    const reply = await apiRequest('GET', '/report/best/sellers', { query: { days }, timeoutMs: 30000 });
+    const reply = await apiRequest('GET', '/report/best/sellers', { query: custom ? { from, to } : { days }, timeoutMs: 30000 });
     const byProduct = arrayData(reply?.by_product);
     const byItem = arrayData(reply?.by_item);
-    const period = reportPeriods.find(p => p.days === days).label;
+    const period = custom ? `${fmt.date(from)} – ${fmt.date(to)}` : reportPeriods.find(p => p.days === days).label;
     const values = {
       ...fallback, byProduct, byItem,
       totalUnits: Number(reply?.total_units) || 0, totalRevenue: Number(reply?.total_revenue) || 0, dataAvailable: true
     };
-    const name = `best-sellers-by-${view}-${days ? days + '-days' : 'all-time'}`;
+    const name = `best-sellers-by-${view}-${custom ? from + '-to-' + to : (days ? days + '-days' : 'all-time')}`;
     return reportOutput(req, res, 'bestsellers', values, { filename: name, title: `Best sellers · ${period}` }, () =>
       view === 'item'
         ? sendExcel(res, name, 'Best sellers', [
             { header: 'Rank', type: 'int' }, { header: 'Product' }, { header: 'Size' }, { header: 'Color' },
-            { header: 'Units sold', type: 'int' }, { header: 'Total sales', type: 'money' }],
-            byItem.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Size, r.Color, r.Units_Sold, r.Revenue]),
+            { header: 'Units sold', type: 'int' }, { header: 'Total sales', type: 'money' },
+            { header: 'First sold', type: 'date' }, { header: 'Last sold', type: 'date' }],
+            byItem.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Size, r.Color, r.Units_Sold, r.Revenue, r.First_Sold, r.Last_Sold]),
             `Space City Couture · Best sellers by size and color · ${period}`)
         : sendExcel(res, name, 'Best sellers', [
             { header: 'Rank', type: 'int' }, { header: 'Product' }, { header: 'Category' },
-            { header: 'Units sold', type: 'int' }, { header: 'Total sales', type: 'money' }],
-            byProduct.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Category, r.Units_Sold, r.Revenue]),
+            { header: 'Units sold', type: 'int' }, { header: 'Total sales', type: 'money' },
+            { header: 'First sold', type: 'date' }, { header: 'Last sold', type: 'date' }],
+            byProduct.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Category, r.Units_Sold, r.Revenue, r.First_Sold, r.Last_Sold]),
             `Space City Couture · Best sellers by product · ${period}`));
   } catch (err) {
     return page(req, res, 'bestsellers', {
@@ -840,16 +852,22 @@ app.get('/reports/sales', pageAccess, async (req, res) => {
   if (from > to) [from, to] = [to, from];
   const rangeKey = (ranges.find(r => r.from === from && r.to === to) || {}).key || 'custom';
   const manager = isManagerReq(req);
-  const fallback = { from, to, rangeKey, ranges, manager, summary: null, byProduct: [], byCategory: [], byDay: [], sales: [], generated: localToday(), dataAvailable: false };
+  // ?product=<id>: only that product's sales (Best sellers links here)
+  const productId = /^[1-9]\d*$/.test(String(req.query.product || '')) ? String(req.query.product) : '';
+  const fallback = { from, to, rangeKey, ranges, manager, productId, productName: '', summary: null, byProduct: [], byCategory: [], byDay: [], sales: [], generated: localToday(), dataAvailable: false };
   try {
-    const reply = await apiRequest('GET', '/report/sales', { query: { from, to }, timeoutMs: 30000 });
+    const reply = await apiRequest('GET', '/report/sales', { query: { from, to, product_id: productId || undefined }, timeoutMs: 30000 });
     const values = {
       ...fallback, summary: reply?.summary || null,
       byProduct: arrayData(reply?.by_product), byCategory: arrayData(reply?.by_category), byDay: arrayData(reply?.by_day),
       sales: arrayData(reply?.sales), generated: reply?.generated || localToday(), dataAvailable: true
     };
-    const name = `sales-report-${from}-to-${to}`;
-    const title = `Sales report · ${fmt.date(from)} – ${fmt.date(to)}`;
+    if (productId) {
+      const products = await apiGet('/api/products').catch(() => []);
+      values.productName = (arrayData(products).find(p => String(p.Product_ID) === productId) || {}).Name || 'this product';
+    }
+    const name = `sales-report-${from}-to-${to}${productId ? '-product-' + productId : ''}`;
+    const title = `Sales report · ${fmt.date(from)} – ${fmt.date(to)}${values.productName ? ' · ' + values.productName : ''}`;
     return reportOutput(req, res, 'report-sales', values, { filename: name, title }, () => {
       // One row per sale (order): its units, the price of one item, and that sale's total (units × unit price).
       const columns = [{ header: 'Date', type: 'date' }, { header: 'Order #', type: 'int' }, { header: 'Product' }, { header: 'Category' },
@@ -1564,6 +1582,25 @@ const catalogRenames = {
     nameField: 'Size'
   }
 };
+
+// DELETE COLORS AND SIZES (managers). The API refuses one that a product variant still uses.
+const catalogDeletes = {
+  colors: { endpoint: '/delete/color', idField: 'Color_ID', label: 'Color' },
+  sizes: { endpoint: '/delete/size', idField: 'Size_ID', label: 'Size' }
+};
+app.post('/manage/delete/:kind/:id', managerOnly, async (req, res) => {
+  const config = catalogDeletes[req.params.kind];
+  const id = Number(req.params.id);
+  if (!config || !Number.isSafeInteger(id) || id <= 0) {
+    return flashAndRedirect(req, res, 'Only colors and sizes can be deleted here.', '/manage');
+  }
+  try {
+    const result = await apiRequest('DELETE', config.endpoint, { body: { [config.idField]: id } });
+    return flashAndRedirect(req, res, result?.message || `${config.label} deleted.`, `/manage#${req.params.kind}`);
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, `Unable to delete the ${config.label.toLowerCase()}.`), `/manage#${req.params.kind}`);
+  }
+});
 
 app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
   const config = catalogRenames[req.params.kind];
