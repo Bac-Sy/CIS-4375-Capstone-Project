@@ -2,25 +2,38 @@
 
 **Stack:** MySQL on AWS RDS (managed in MySQL Workbench) → Flask API (`backend/`) → Node/Express server (`frontend/server.js`) rendering EJS views (`frontend/`)
 
+**Using the app:** see the [User Guide](frontend/USER_GUIDE.md) (every page, for managers and employees).
+**Setting it up:** see [Backend](#backend-flask-api-port-5000) and [Frontend](#frontend-express--ejs-port-8080) below, then [First manager account](#first-manager-account).
+
 ```
 backend/
-  api.py              Flask API routes
-  sql.py              DBconnection, execute_read_query, execute_update_query
+  api.py              Flask API routes (CRUD, login, invoices, stock adjustments)
+  reporting.py        read-only reports: /inventory, /orders, /employees, /dashboard, store settings
+  security.py         login tokens and the check that every API call is logged in
+  sql.py              DBconnection (reuses connections), execute_read_query, execute_update_query
   creds.py            mycreds class: reads DB login from backend/.env.<env>
+  create_manager.py   creates the first Manager account on a new database
   requirements.txt
-frontend/views/
-  pages/              one .ejs file per page (index.ejs, ...)
-  template/           shared pieces: head, nav, footer, messages, scripts
-public/css/           custom CSS (styles.css)
 frontend/
-    server.js         Express routes
+  server.js           Express routes
+  lib/                charts (donut, stock in vs. out) and formatting helpers
+  views/pages/        one .ejs file per page (index.ejs, ...)
+  views/template/     shared pieces: head, nav, footer, messages, scripts, confirm, rowmenu (the ⋯ menu)
+  tests/              offline checks (see Running the tests)
+  USER_GUIDE.md       how to use every page
+public/
+  css/styles.css      all custom CSS
+  main.js             menu, ⋯ menus, Inventory adjust buttons
+  js/                 page scripts (add-variants.js, edit-order.js)
+database/             create_capstone_tables.sql, sample_data.sql
+docs/                 design suggestions and before/after screenshots
 package.json
 ```
 
 ### Adding a feature
 
 1. **Flask route** in `backend/api.py`: query the database and return JSON.
-2. **Express route** in `frontend/server.js`: call that API with `axios`, then `res.render()` a page.
+2. **Express route** in `frontend/server.js`: call that API with `apiGet` / `apiPost` / `apiPut` (they add the login token), then `page(req, res, 'name', {...})` to render it.
 3. **Page** in `frontend/views/pages/`: copy `index.ejs` and change the `<main>` section.
 
 Always pass user input as query parameters, never with `%` formatting (that allows SQL injection):
@@ -118,3 +131,27 @@ npm start              # production
 Open http://localhost:8080. The page shows whether the Flask API is reachable. The Flask backend must be running separately on port 5000.
 
 > Real `.env.*` files are git-ignored. Never commit passwords.
+
+### First manager account
+On a new, empty database nobody can log in yet, and adding employees needs a manager. Create the first one from the `backend` folder (with the same `.env.development` as the API):
+```bash
+python create_manager.py
+```
+It asks for a name, username, email and password, and saves a Manager. After that, managers add everyone else from **Employees → + Add employee**. (`database/sample_data.sql` also creates a "Test User" manager for testing.)
+
+### Store settings
+The low stock threshold (default 5) can be changed by a manager on **Settings**. It's saved in `backend/settings.json`, which is git-ignored; until someone saves one, `LOW_STOCK_THRESHOLD` in the backend `.env` file is used.
+
+### Running the tests
+These run offline (no database or servers needed), from the project folder:
+```bash
+node frontend/tests/check_routes.js        # routes exist, logins and manager-only actions are enforced, product flow
+node frontend/tests/verify_templates.js    # every page template compiles and every form has its CSRF token
+python frontend/tests/check_security.py    # login tokens, and that the API refuses calls without one
+```
+
+### Stopping a server that's still running
+If a port is already in use (`EADDRINUSE` or "Address already in use"), something is still running on it. In PowerShell:
+```powershell
+8080, 5000 | ForEach-Object { Get-NetTCPConnection -LocalPort $_ -State Listen -ErrorAction SilentlyContinue } | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```

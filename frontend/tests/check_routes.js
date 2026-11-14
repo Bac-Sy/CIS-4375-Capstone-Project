@@ -4,7 +4,7 @@ const assert = require('assert');
 const path = require('path');
 const Module = require('module');
 const fs = require('fs');
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '..', '..'); // project root (this file is in frontend/tests)
 const expected = path.join(root, 'frontend', 'server.js');
 const pkg = require(path.join(root, 'package.json'));
 assert.strictEqual(pkg.main, 'frontend/server.js');
@@ -98,7 +98,7 @@ async function verifyProductFlow() {
     if (routePath === '/api/suppliers') return { ok: true, status: 200,
       text: async () => JSON.stringify([{ Supplier_ID: 2, Name: 'Houston Threads' }]) };
     if (routePath === '/api/products' && opts.method === 'POST') return { ok: true, status: 201,
-      text: async () => JSON.stringify({ message: 'Product added!' }) };
+      text: async () => JSON.stringify({ message: 'Product added!', Product_ID: 9 }) };
     if (routePath === '/api/products/7' && opts.method === 'DELETE') return { ok: false, status: 409,
       text: async () => JSON.stringify({ message: 'This product has variants and cannot be deleted.' }) };
     if (routePath === '/api/products/8' && opts.method === 'DELETE') return { ok: true, status: 200,
@@ -139,7 +139,7 @@ async function verifyProductFlow() {
     assert(allowedPost);
     await add.handlers[1](addReq, addRes);
     assert.strictEqual(addRes.redirectCode, 303);
-    assert.strictEqual(addRes.target, '/manage');
+    assert.strictEqual(addRes.target, '/products/9/variants/new'); // a new product goes straight to Add variants
     assert(addReq.session.flash.includes('New Dress'));
     const posted = calls.find(c => c.routePath === '/api/products' && c.method === 'POST');
     assert.deepStrictEqual(posted.body, { Name: 'New Dress', Category_ID: 1,
