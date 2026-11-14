@@ -57,21 +57,27 @@
                     <% if (f.stock) { %><input type="hidden" name="stock" value="<%= f.stock %>"><% } %>
                     <% if (f.status) { %><input type="hidden" name="status" value="<%= f.status %>"><% } %>
                     <button type="submit" class="btn btn-sm btn-primary">Search</button>
+                    <!-- up here, so turning a filter on doesn't make the pill row wider (that pushed Status onto a new line) -->
+                    <!-- always takes its space (hidden when nothing is filtered), so nothing moves when it appears -->
+                    <% if (filtering) { %><a href="/inventory" class="filter-clear">Clear filters</a><% } else { %><span class="filter-clear filter-clear-hidden" aria-hidden="true">Clear filters</span><% } %>
                   </div>
                   <div class="filter-group">
+                    <span class="filter-pair">
                     <span class="filter-label">Stock</span>
                     <nav class="pills" aria-label="Stock level">
                       <% [pill('stock', '', 'All'), pill('stock', 'low', 'Low stock (' + c.low + ')'), pill('stock', 'out', 'Out of stock (' + c.out + ')'), pill('stock', 'in', 'In stock (' + c.in + ')')].forEach(function(p) { %>
                         <a href="<%= p.href %>" class="<%= p.on ? 'active' : '' %>"<% if (p.on) { %> aria-current="true"<% } %>><%= p.label %></a>
                       <% }); %>
                     </nav>
-                    <span class="filter-label filter-label-gap">Status</span>
+                    </span>
+                    <span class="filter-pair">
+                    <span class="filter-label">Status</span>
                     <nav class="pills" aria-label="Product status">
                       <% [pill('status', '', 'All'), pill('status', 'available', 'Available (' + c.available + ')'), pill('status', 'unavailable', 'Not available (' + c.unavailable + ')')].forEach(function(p) { %>
                         <a href="<%= p.href %>" class="<%= p.on ? 'active' : '' %>"<% if (p.on) { %> aria-current="true"<% } %>><%= p.label %></a>
                       <% }); %>
                     </nav>
-                    <% if (filtering) { %><a href="/inventory" class="filter-clear">Clear filters</a><% } %>
+                    </span>
                   </div>
                 </form>
 

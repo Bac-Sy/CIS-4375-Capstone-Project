@@ -48,7 +48,7 @@
                     <label for="to">To</label>
                     <input type="date" id="to" name="to" class="form-control form-control-sm" value="<%= oto %>">
                     <button type="submit" class="btn btn-sm btn-primary">Search</button>
-                    <% if (ordersFiltered || selected) { %><a href="/orders" class="filter-clear">Clear filters</a><% } %>
+                    <% if (ordersFiltered || selected) { %><a href="/orders" class="filter-clear">Clear filters</a><% } else { %><span class="filter-clear filter-clear-hidden" aria-hidden="true">Clear filters</span><% } %>
                   </div>
                 </form>
 

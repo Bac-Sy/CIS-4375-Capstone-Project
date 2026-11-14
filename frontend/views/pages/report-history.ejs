@@ -47,7 +47,7 @@
         <label for="to" class="filter-label">To</label>
         <input type="date" id="to" name="to" class="form-control form-control-sm" value="<%= to %>">
         <button type="submit" class="btn btn-sm btn-primary">Show</button>
-        <% if (area || employee || from || to || hq) { %><a href="/reports/history" class="filter-clear">Clear filters</a><% } %>
+        <% if (area || employee || from || to || hq) { %><a href="/reports/history" class="filter-clear">Clear filters</a><% } else { %><span class="filter-clear filter-clear-hidden" aria-hidden="true">Clear filters</span><% } %>
       </div>
     </form>
 

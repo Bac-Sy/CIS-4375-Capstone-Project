@@ -1219,8 +1219,11 @@ option.opt-new { background: var(--row-new); color: #a3002a; font-weight: 700; }
 .search-box input::-webkit-search-cancel-button { display: none; }
 .search-clear { position: absolute; right: 0.35rem; display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; color: var(--muted); text-decoration: none; font-size: 0.85rem; }
 .search-clear:hover, .search-clear:focus-visible { background: var(--surface-2); color: var(--ink); }
-.filter-label-gap { margin-left: 0.75rem; }
-@media (max-width: 640px) { .search-box { width: 100%; flex-basis: 100%; } .filter-label-gap { margin-left: 0; } }
+/* a label and its pills stay together when the row wraps */
+.filter-pair { display: inline-flex; align-items: center; gap: 0.5rem; margin-right: 0.75rem; }
+.filter-clear-hidden { visibility: hidden; }
+.pills a { font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .search-box { width: 100%; flex-basis: 100%; } .filter-pair { flex-wrap: wrap; margin-right: 0; } }
 @media print { .filter-bar, .report-tabs { display: none !important; } }
 
 
