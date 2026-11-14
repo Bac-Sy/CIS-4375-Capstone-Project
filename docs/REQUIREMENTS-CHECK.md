@@ -3,7 +3,7 @@
 Each requirement from the Requirements Traceability Matrix: every feature its "Proposed Feature / Design Element" column promises, where it is in the app, and how it was checked.
 Checked on November 13, 2026, against the `bianca-redesign` branch (PR #18), on the shared development database, logged in as a test manager. This was a line-by-line review of every RTM column, plus the problems noted in the RTM's Notes column. The demo script (steps 1–10) was then run end to end on the real app: 28 of 28 checks passed.
 
-**Summary:** R-01 to R-10 and R-13 are met; several need RTM wording updates (listed below). R-09 is out of scope. **R-11 is in progress**: the user guide is still being written (Madison), and usability is judged by the sponsor at the demo. **R-12 is mostly met**; the remaining gaps are database-side (see the R-12 row and "Still open").
+**Summary:** R-01 to R-10 and R-13 are met; several need RTM wording updates (listed below). R-09 is out of scope. **R-11 is in progress**: the user guide is still being written (Madison), and usability is judged by the sponsor at the demo. **R-12 is mostly met**: the audit trail is complete (Edit history); the remaining gaps are database-side (see the R-12 row and "Still open").
 
 | ID | Promised element | Where in the app | Status |
 |---|---|---|---|
@@ -41,7 +41,7 @@ Checked on November 13, 2026, against the `bianca-redesign` branch (PR #18), on 
 | | User guide | `frontend/USER_GUIDE.md`: outline only. **Madison is writing it.** It should cover Reports (print / CSV), Settings (password, threshold), the low stock filter and Best sellers | **In progress** |
 | | Usability testing | With the sponsor at the demo (Nov 16–17) | Not started |
 | **R-12** | Input validation | Every form is checked by the website before it reaches the API; the stock, order, report and password API routes also check their input. The older catalog API routes (suppliers, categories, products…) rely on the website's checks | Met (API partly) |
-| | Transaction audit trail | Every stock change is an order with who and when, and recorded under the logged-in person (the API enforces it). Any employee can **fix** an order (item, quantity, type, date); **only managers can delete** one. Editing keeps the original "Recorded by", with no separate edit history; deleting removes it | Mostly met |
+| | Transaction audit trail | Every stock change is an order with who and when, recorded under the logged-in person (the API enforces it). **Reports → Edit history** (managers) lists every change made in the app, with who made it, when, and each value before → after: order edits and deletes, stock adjustments, products, variants, suppliers, categories, locations, colors, sizes, employees, password changes (never the password) and store settings. It has filters, Print and CSV. Any employee can **fix** an order; **only managers can delete** one | Met |
 | | Data integrity constraints | Foreign keys, UNIQUE and CHECK (quantity, price, cost ≥ 0) in the schema; multi-step stock changes are all-or-nothing; duplicate size / color variants are blocked by the app | Mostly met (see "Still open") |
 | | Backups | Not part of the app: AWS RDS automated backups | Wording |
 | **R-13** | Authentication | Login for every page and every API call (signed tokens); passwords stored as argon2 hashes; session renewed at login; login rate limiting; CSRF tokens on every form | Met |
@@ -61,7 +61,7 @@ Checked on November 13, 2026, against the `bianca-redesign` branch (PR #18), on 
 | R-09 | Blocked: waiting on sponsor | Out of scope: the store only sells physical stock it holds |
 | R-10 | Fail: dashboard showed $0 | Fixed (local dates, PR #10). Add the Reports pages (sales report, inventory report, print / CSV). Retest |
 | R-11 | Not Started | User guide in progress (Madison); usability judged at the demo |
-| R-12 | "… data integrity constraints, **backups**" | Backups are AWS RDS automated backups, not the app |
+| R-12 | "… transaction audit trail …"; "… data integrity constraints, **backups**" | Audit trail: Reports → Edit history (stored in `backend/edit_history.jsonl`, not the database, so the ERD and data dictionary don't change). Backups: AWS RDS automated backups for the database, plus copying `backend/edit_history.jsonl` and `backend/settings.json` |
 | R-13 | Note: "Please log in" on the blocked page | Fixed |
 
 ## Still open before handoff
@@ -77,7 +77,9 @@ These need the team (or the database owner), not app code:
    - The `Invoice.Transaction_Type_ID` foreign key is missing there (see `create_capstone_tables.sql`).
    - Consider `UNIQUE (Product_ID, Size_ID, Color_ID)` on `Product_Variant`, so duplicates are blocked by the database, not only the app.
    - Run `UPDATE Supplier SET Email = NULL WHERE Email = ''`. Blank supplier emails are now saved as empty (NULL); this fixes older rows.
-4. **Backups:** confirm RDS automated backups are on, with the retention you want. The low stock threshold lives in `backend/settings.json` on the server, not in the database, so back that file up too, or just re-enter it.
+4. **Backups:** confirm RDS automated backups are on, with the retention you want. Two files live on the computer that runs the API, not in the database. Back them up too:
+   - `backend/edit_history.jsonl`: the edit history. It can't be recreated if it's lost.
+   - `backend/settings.json`: the low stock threshold. It can just be re-entered.
 5. **Hosting:** the app runs locally (Flask on port 5000, Express on 8080); there's no production hosting.
 6. **First login on a new database:** run `python backend/create_manager.py`.
 
@@ -85,7 +87,8 @@ These need the team (or the database owner), not app code:
 
 - **Reports use current prices:** sales reports value past sales at each item's *current* price and cost, because orders don't store the price at the time of the sale. The report says so.
 - **Supplier on restocks:** a restock shows the product's current supplier; it isn't saved on the order.
-- **Editing an order** keeps its original "Recorded by", and there's no separate edit history. Any employee can fix an order; only managers can delete one.
+- **Editing an order** keeps its original "Recorded by"; the edit itself (who, when, before → after) is in Edit history. Any employee can fix an order; only managers can delete one.
+- **The edit history is a file,** so it covers changes made on the computer that runs the API. That's fine for the sponsor, whose app runs on one computer. If the database is changed some other way (e.g. directly in MySQL Workbench), it isn't recorded.
 
 ## How it was checked
 

@@ -374,3 +374,6 @@ def register_reporting_routes(app, connect, read_query):
             'low_stock_threshold': threshold(),
             'stock_weeks': weeks
         })
+
+    # the Edit history uses this to record threshold changes
+    return threshold

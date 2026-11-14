@@ -12,6 +12,7 @@ from argon2 import PasswordHasher, exceptions
 from datetime import date
 from security import auth_secret, issue_token, install_auth, forget_employee
 from reporting import register_reporting_routes
+from history import register_history
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -1301,8 +1302,10 @@ def bestSellers():
 
 
 # Add reporting endpoints, then protect all routes except health/login.
-register_reporting_routes(app, get_db_connection, execute_read_query)
+current_threshold = register_reporting_routes(app, get_db_connection, execute_read_query)
 install_auth(app, get_db_connection, execute_read_query)
+# Edit history (backend/history.py) is registered after install_auth, so it knows who is making each change.
+register_history(app, get_db_connection, execute_read_query, current_threshold)
 
 # --- START THE API ---
 if __name__ == '__main__':

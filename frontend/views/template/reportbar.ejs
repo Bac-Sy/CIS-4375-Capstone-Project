@@ -6,6 +6,7 @@
   const barTitle = typeof reportTitle !== 'undefined' ? reportTitle : 'Report';
   const barSubtitle = typeof reportSubtitle !== 'undefined' ? reportSubtitle : '';
   const reportTabs = [['sales', 'Sales report', '/reports/sales'], ['inventory', 'Inventory report', '/reports/inventory'], ['best', 'Best sellers', '/reports/best-sellers']];
+  if (typeof Role !== 'undefined' && Role === 'Manager') reportTabs.push(['history', 'Edit history', '/reports/history']);
 %>
 <header class="page-header page-header-row report-head">
   <div>

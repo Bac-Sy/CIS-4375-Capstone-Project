@@ -10,6 +10,7 @@ backend/
   api.py              Flask API routes (CRUD, login, invoices, stock adjustments)
   reporting.py        read-only reports: /inventory, /orders, /employees, /dashboard, /report/inventory, /report/sales, store settings
   security.py         login tokens and the check that every API call is logged in
+  history.py          edit history: records every change (who, when, before → after) in edit_history.jsonl
   sql.py              DBconnection (reuses connections), execute_read_query, execute_update_query
   creds.py            mycreds class: reads DB login from backend/.env.<env>
   create_manager.py   creates the first Manager account on a new database
@@ -139,8 +140,10 @@ python create_manager.py
 ```
 It asks for a name, username, email and password, and saves a Manager. After that, managers add everyone else from **Employees → + Add employee**. (`database/sample_data.sql` also creates a "Test User" manager for testing.)
 
-### Store settings
+### Store settings and edit history
 The low stock threshold (default 5) can be changed by a manager on **Settings**. It's saved in `backend/settings.json`, which is git-ignored; until someone saves one, `LOW_STOCK_THRESHOLD` in the backend `.env` file is used.
+
+Every change made in the app (who, when, before → after) is recorded in `backend/edit_history.jsonl` by `backend/history.py`, and managers see it under **Reports → Edit history**. It's a file rather than a database table, so the database design doesn't change. Both files are git-ignored and live only on the computer that runs the API, so **back them up** along with the database.
 
 ### Running the tests
 These run offline (no database or servers needed), from the project folder:

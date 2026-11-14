@@ -100,6 +100,7 @@ for (const url of ['/reports', '/reports/sales', '/reports/inventory', '/reports
   const out = runGuard(route('GET', url).handlers[0], null);
   assert(!out.allowed && (out.redirect === '/login' || out.code === 401), `${url} must require a login`);
 }
+assert.strictEqual(runGuard(route('GET', '/reports/history').handlers[0], employee).code, 403, 'the edit history must be manager-only');
 for (const url of ['/products/:id/edit', '/variants/:id/edit', '/suppliers/:id/edit', '/categories/:id/edit', '/locations/:id/edit']) {
   const out = runGuard(route('GET', url).handlers[0], employee);
   assert(!out.allowed && out.code === 403, `${url} must be manager-only`);

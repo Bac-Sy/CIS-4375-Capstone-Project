@@ -638,6 +638,40 @@ function salesRanges() {
     { key: 'this-year', label: 'This year', from: isoDate(new Date(y, 0, 1)), to: isoDate(now) }
   ];
 }
+// EDIT HISTORY (managers): every change made in the app, who made it, and the old -> new values.
+// Kept by the Flask API in backend/edit_history.jsonl (see backend/history.py).
+app.get('/reports/history', managerOnly, async (req, res) => {
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
+  const area = typeof req.query.area === 'string' ? req.query.area : '';
+  const person = typeof req.query.employee === 'string' && /^\d+$/.test(req.query.employee) ? req.query.employee : '';
+  const from = validDate(req.query.from) ? String(req.query.from) : '';
+  const to = validDate(req.query.to) ? String(req.query.to) : '';
+  const pageNumber = /^[1-9]\d{0,5}$/.test(String(req.query.page || '')) ? Number(req.query.page) : 1;
+  const filters = { area, employee: person, from, to };
+  const fallback = { ...filters, pageNumber, entries: [], total: 0, hasMore: false, areas: [], people: [], dataAvailable: false };
+  try {
+    if (req.query.format === 'csv') {
+      const reply = await apiRequest('GET', '/history', { query: { ...filters, limit: 1000 }, timeoutMs: 30000 });
+      const rows = [];
+      for (const e of arrayData(reply?.entries)) {
+        const changes = arrayData(e.changes);
+        const base = [String(e.time || '').replace('T', ' '), e.employee, e.area, e.action, e.kind, e.target];
+        if (!changes.length) rows.push([...base, '', '', '']);
+        for (const c of changes) rows.push([...base, c.field, c.from, c.to]);
+      }
+      return sendCsv(res, `edit-history${from ? '-from-' + from : ''}${to ? '-to-' + to : ''}.csv`,
+        ['When', 'Who', 'Area', 'Action', 'What', 'Name', 'Field', 'Before', 'After'], rows);
+    }
+    const reply = await apiRequest('GET', '/history', { query: { ...filters, limit: 100, offset: (pageNumber - 1) * 100 }, timeoutMs: 30000 });
+    return page(req, res, 'report-history', {
+      ...fallback, entries: arrayData(reply?.entries), total: Number(reply?.total) || 0, hasMore: Boolean(reply?.has_more),
+      areas: arrayData(reply?.areas), people: arrayData(reply?.people), dataAvailable: true
+    });
+  } catch (err) {
+    return page(req, res, 'report-history', { ...fallback, message: apiError(err, 'The edit history is unavailable.') });
+  }
+});
+
 app.get('/reports/sales', pageAccess, async (req, res) => {
   const ranges = salesRanges();
   const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));

@@ -1,0 +1,107 @@
+<%
+  // Edit history (managers): every change made in the app, newest first.
+  const qs = (extra) => {
+    const parts = [];
+    const all = Object.assign({ area: area, employee: employee, from: from, to: to }, extra || {});
+    Object.keys(all).forEach(k => { if (all[k]) parts.push(k + '=' + encodeURIComponent(all[k])); });
+    return parts.join('&');
+  };
+  const when = t => {
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? t : d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
+  const subtitle = [area || 'All changes', from || to ? (from ? fmt.date(from) : '…') + ' – ' + (to ? fmt.date(to) : 'today') : ''].filter(Boolean).join(' · ');
+  const first = (pageNumber - 1) * 100 + 1;
+%>
+<!doctype html>
+<html lang="en">
+<head>
+  <%- include('../template/head', { title: 'Edit history' }) %>
+</head>
+<body>
+<div class="app">
+  <%- include('../template/nav', { active: 'reports' }) %>
+  <main class="content">
+    <%- include('../template/topbar') %>
+    <%- include('../template/messages') %>
+
+    <%- include('../template/reportbar', { reportKey: 'history', reportTitle: 'Edit history', reportSubtitle: subtitle, csvHref: '/reports/history?' + qs({ format: 'csv' }) }) %>
+
+    <form class="range-form no-print" method="GET" action="/reports/history" aria-label="Filter the history">
+      <div class="range-dates">
+        <label for="area" class="form-label">Type</label>
+        <select id="area" name="area" class="form-select" style="width:auto">
+          <option value="">All changes</option>
+          <% areas.forEach(function(a) { %><option value="<%= a %>" <%= area === a ? 'selected' : '' %>><%= a %></option><% }); %>
+        </select>
+        <label for="employee" class="form-label">Who</label>
+        <select id="employee" name="employee" class="form-select" style="width:auto">
+          <option value="">Everyone</option>
+          <% people.forEach(function(p) { %><option value="<%= p.id %>" <%= employee === String(p.id) ? 'selected' : '' %>><%= p.name %></option><% }); %>
+        </select>
+        <label for="from" class="form-label">From</label>
+        <input type="date" id="from" name="from" class="form-control" value="<%= from %>">
+        <label for="to" class="form-label">To</label>
+        <input type="date" id="to" name="to" class="form-control" value="<%= to %>">
+        <button type="submit" class="btn btn-primary">Show</button>
+        <% if (area || employee || from || to) { %><a href="/reports/history" class="btn btn-outline-secondary">Clear</a><% } %>
+      </div>
+    </form>
+
+    <section class="panel">
+      <div class="panel-bar">
+        <% if (!dataAvailable) { %>The history is unavailable.<% } else if (!total) { %>No changes recorded<%= area || employee || from || to ? ' for these filters' : ' yet' %>.<% } else if (pageNumber === 1 && !hasMore) { %><%= fmt.number(total) %> <%= total === 1 ? 'change' : 'changes' %>, newest first<% } else { %>Showing <%= fmt.number(first) %>–<%= fmt.number(first + entries.length - 1) %> of <%= fmt.number(total) %>, newest first<% } %>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table history-table">
+          <caption class="visually-hidden">Edit history</caption>
+          <thead>
+            <tr><th scope="col">When</th><th scope="col">Who</th><th scope="col">What</th><th scope="col">Changes</th></tr>
+          </thead>
+          <tbody>
+            <% if (dataAvailable && !entries.length) { %>
+              <tr><td colspan="4" class="empty-cell">Changes appear here as soon as someone edits, adjusts, adds or deletes something.</td></tr>
+            <% } %>
+            <% entries.forEach(function(e) { %>
+              <tr>
+                <td class="history-when"><%= when(e.time) %></td>
+                <td><strong><%= e.employee %></strong></td>
+                <td>
+                  <span class="tag tag-<%= e.action === 'Deleted' ? 'red' : e.action === 'Added' ? 'restock' : 'soft' %>"><%= e.action %></span>
+                  <span class="history-kind"><%= e.kind %></span>
+                  <div class="history-target"><%= e.target %></div>
+                </td>
+                <td>
+                  <% if (!e.changes || !e.changes.length) { %><span class="muted">—</span><% } %>
+                  <% if (e.changes && e.changes.length) { %>
+                    <ul class="history-changes">
+                      <% e.changes.forEach(function(c) { %>
+                        <li><span class="muted"><%= c.field %>:</span>
+                          <% if (e.action === 'Added' || c.from === '') { %><strong><%= c.to %></strong>
+                          <% } else if (e.action === 'Deleted' || c.to === '') { %><span class="was"><%= c.from %></span>
+                          <% } else { %><span class="was"><%= c.from %></span> → <strong><%= c.to %></strong><% } %>
+                        </li>
+                      <% }); %>
+                    </ul>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <% if (pageNumber > 1 || hasMore) { %>
+        <nav class="pager no-print" aria-label="More changes">
+          <% if (pageNumber > 1) { %><a class="btn btn-outline-secondary" href="/reports/history?<%= qs({ page: pageNumber - 1 }) %>">← Newer</a><% } else { %><span></span><% } %>
+          <% if (hasMore) { %><a class="btn btn-outline-secondary" href="/reports/history?<%= qs({ page: pageNumber + 1 }) %>">Older →</a><% } %>
+        </nav>
+      <% } %>
+    </section>
+    <p class="empty report-note">Every edit, stock adjustment, addition and deletion made in the app, with who made it and the value before → after. New sales and restocks are on the Orders page. Passwords are never shown, only that one was changed. Managers only.</p>
+
+    <%- include('../template/footer') %>
+  </main>
+</div>
+<%- include('../template/scripts') %>
+</body>
+</html>

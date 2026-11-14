@@ -35,6 +35,9 @@ const data = { ...partialData,
   sizes:[{Size_ID:1,Size:'M'}], colors:[{Color_ID:1,Color:'Black'}],
   error:null, ErrorMessage:null, username:'', Username:'', detail:'Not found', title:'Error',
   data:{sales:{revenue:50,units:1,days:30},recent_by_type:{Sale:[],Restock:[],Adjustment:[]},low_stock:[],low_stock_threshold:5,inventory_totals:{units:3,items:1,products:1}}, donut:null, flow:null, recentType:'Sale',
+  // Edit history
+  area:'', employee:'', pageNumber:1, hasMore:false, total:1, areas:['Orders','Stock'], people:[{id:'1',name:'Test User'}],
+  entries:[{time:'2026-11-13T21:05:00',employee:'Test User',area:'Orders',kind:'Order',action:'Edited',target:'Order #25 (Sale, Dress – M / Black)',changes:[{field:'Quantity change',from:'-1',to:'-2'}]},{time:'2026-11-13T21:06:00',employee:'Test User',area:'Catalog',kind:'Supplier',action:'Added',target:'S',changes:[{field:'Name',from:'',to:'S'}]},{time:'2026-11-13T21:07:00',employee:'Test User',area:'Products',kind:'Product',action:'Deleted',target:'Dress',changes:[]}],
   // Reports
   from:'2026-11-01', to:'2026-11-14', rangeKey:'this-month', ranges:[{key:'this-month',label:'This month',from:'2026-11-01',to:'2026-11-14'}], manager:true,
   summary:{revenue:50,units:1,sales:1,cost:20,profit:30,average_sale:50,margin:60}, byCategory:[], byDay:[], sales:[], totals:{units:3,items:1,products:1,value_cost:6,value_retail:30,low:1,out:0}, generated:'2026-11-14',
