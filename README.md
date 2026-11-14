@@ -2,7 +2,7 @@
 
 **Stack:** MySQL on AWS RDS (managed in MySQL Workbench) → Flask API (`backend/`) → Node/Express server (`frontend/server.js`) rendering EJS views (`frontend/`)
 
-**Using the app:** see the [User Guide](frontend/USER_GUIDE.md) (every page, for managers and employees).
+**Using the app:** see the [User Guide](frontend/USER_GUIDE.md).
 **Setting it up:** see [Backend](#backend-flask-api-port-5000) and [Frontend](#frontend-express--ejs-port-8080) below, then [First manager account](#first-manager-account).
 
 ```
@@ -20,7 +20,7 @@ frontend/
   views/pages/        one .ejs file per page (index.ejs, ...)
   views/template/     shared pieces: head, nav, footer, messages, scripts, confirm, rowmenu (the ⋯ menu)
   tests/              offline checks (see Running the tests)
-  USER_GUIDE.md       how to use every page
+  USER_GUIDE.md       user guide
 public/
   css/styles.css      all custom CSS
   main.js             menu, ⋯ menus, Inventory adjust buttons
