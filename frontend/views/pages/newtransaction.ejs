@@ -31,13 +31,15 @@
                   class="form-select" required>
             <option value="">Select a product</option>
             <% variants.forEach(function(v) { %>
-              <option value="<%= v.variant_id %>">
-                <%= v.product %> —
+              <option value="<%= v.variant_id %>" class="<%= isNew('variants', v.variant_id) ? 'opt-new' : '' %>" data-supplier="<%= v.supplier || '' %>" data-available="<%= (v.available === false || v.available === 0 || v.available === '0') ? '0' : '1' %>">
+                <%= isNew('variants', v.variant_id) ? '★ ' : '' %><%= v.product %> —
                 <%= v.size %> / <%= v.color %>
-                (<%= v.quantity %> in stock)
+                (<%= v.quantity %> in stock)<%= (v.available === false || v.available === 0 || v.available === '0') ? ' · not available' : '' %><%= isNew('variants', v.variant_id) ? ' · New' : '' %>
               </option>
             <% }); %>
           </select>
+          <!-- A Restock comes from the product's supplier (set on Edit product), shown here when Restock is chosen. -->
+          <p class="hint" id="supplierNote" aria-live="polite" hidden></p>
         </div>
 
         <div class="mb-3">
@@ -49,7 +51,7 @@
                   class="form-select" required>
             <option value="">Select type</option>
             <% types.forEach(function(t) { %>
-              <option value="<%= t.Transaction_Type_ID %>">
+              <option value="<%= t.Transaction_Type_ID %>" data-type="<%= t.Transaction_Type %>">
                 <%= t.Transaction_Type %>
               </option>
             <% }); %>
@@ -77,5 +79,6 @@
 
 <%- include('../template/scripts') %>
 <%- include('../template/confirm') %>
+<script src="/js/record-transaction.js?v=2"></script>
 </body>
 </html>

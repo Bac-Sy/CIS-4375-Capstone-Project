@@ -6,7 +6,7 @@ import pathlib
 import sys
 import types
 
-root = pathlib.Path(__file__).resolve().parent.parent
+root = pathlib.Path(__file__).resolve().parent.parent.parent  # project root (this file is in frontend/tests)
 backend = root / 'backend'
 for path in [backend / 'api.py', backend / 'security.py', backend / 'reporting.py', backend / 'sql.py']:
     ast.parse(path.read_text(), filename=str(path))

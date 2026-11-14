@@ -6,10 +6,11 @@
 
 <body>
 <div class="app">
-<%- include('../template/nav', { active: 'none' }) %>
+<%- include('../template/nav', { active: 'inventory' }) %>
 <main class="content">
 <%- include('../template/topbar') %>
 <%- include('../template/messages') %>
+<a href="/inventory#p<%= product.Product_ID %>" class="back-link">← Back to Inventory</a>
 <header class="page-header">
 <h1>Edit product #<%= product.Product_ID %></h1>
 </header>
@@ -28,7 +29,7 @@ value="<%= product.Name %>" maxlength="100" required>
 <label for="Category_ID" class="form-label">Category</label>
 <select class="form-select" id="Category_ID" name="Category_ID" required>
 <% categories.forEach(function(c) { %>
-<option value="<%= c.Category_ID %>" <%= c.Category_ID == product.Category_ID ? 'selected' : '' %>><%= c.Category %></option>
+<option value="<%= c.Category_ID %>" class="<%= isNew('categories', c.Category) ? 'opt-new' : '' %>" <%= c.Category_ID == product.Category_ID ? 'selected' : '' %>><%= newLabel('categories', c.Category, c.Category) %></option>
 <% }); %>
 </select>
 </div>
@@ -37,7 +38,7 @@ value="<%= product.Name %>" maxlength="100" required>
 <label for="Supplier_ID" class="form-label">Supplier</label>
 <select class="form-select" id="Supplier_ID" name="Supplier_ID" required>
 <% suppliers.forEach(function(s) { %>
-<option value="<%= s.Supplier_ID %>" <%= s.Supplier_ID == product.Supplier_ID ? 'selected' : '' %>><%= s.Name %></option>
+<option value="<%= s.Supplier_ID %>" class="<%= isNew('suppliers', s.Name) ? 'opt-new' : '' %>" <%= s.Supplier_ID == product.Supplier_ID ? 'selected' : '' %>><%= newLabel('suppliers', s.Name, s.Name) %></option>
 <% }); %>
 </select>
 </div>
@@ -59,14 +60,14 @@ value="<%= product.Name %>" maxlength="100" required>
   </a>
 <% } %>
 
-<a href="<%= user && String(user.role || '').toLowerCase() === 'manager' ? '/manage' : '/' %>" class="btn btn-outline-secondary">Cancel</a>
+<a href="/inventory#p<%= product.Product_ID %>" class="btn btn-outline-secondary">Cancel</a>
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 </form>
 
 <% if (user && String(user.role || '').toLowerCase() === 'manager') { %>
 <hr class="my-4">
 <h2 class="h5">Delete product</h2>
-<p class="text-muted">This permanently removes the product from the catalogue. Products with linked variants cannot be deleted; those dependencies must be resolved first.</p>
+<p class="text-muted">This permanently removes the product from the catalog. Products with linked variants cannot be deleted; those dependencies must be resolved first.</p>
 <form action="/products/<%= product.Product_ID %>/delete" method="POST"
       data-confirm="Permanently delete <%= product.Name %>? This cannot be undone."
       data-confirm-button="Delete product"

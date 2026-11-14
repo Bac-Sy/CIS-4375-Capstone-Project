@@ -4,7 +4,7 @@ const assert = require('assert');
 const path = require('path');
 const Module = require('module');
 const fs = require('fs');
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '..', '..'); // project root (this file is in frontend/tests)
 const expected = path.join(root, 'frontend', 'server.js');
 const pkg = require(path.join(root, 'package.json'));
 assert.strictEqual(pkg.main, 'frontend/server.js');
@@ -85,6 +85,35 @@ console.log(`PASS: frontend/server.js registered ${routes.length} GET/POST route
 console.log('PASS: EJS path is frontend/views, static files are root/public, and npm scripts target frontend/server.js');
 console.log('PASS: logged-out stock adjustment denied; non-manager delete denied');
 
+// Reports (R-10) need a login; catalog edits and order edits are manager-only (R-12, R-13).
+const runGuard = (handler, user) => {
+  const out = {};
+  handler({ method: 'GET', session: user ? { user } : {} }, {
+    status(code) { out.code = code; return this; },
+    render(view) { out.view = view; },
+    redirect(url) { out.redirect = url; }
+  }, () => { out.allowed = true; });
+  return out;
+};
+const employee = { id: '2', role: 'Employee' };
+for (const url of ['/reports', '/reports/sales', '/reports/inventory', '/reports/best-sellers']) {
+  const out = runGuard(route('GET', url).handlers[0], null);
+  assert(!out.allowed && (out.redirect === '/login' || out.code === 401), `${url} must require a login`);
+}
+assert.strictEqual(runGuard(route('GET', '/reports/history').handlers[0], employee).code, 403, 'the edit history must be manager-only');
+for (const url of ['/products/:id/edit', '/variants/:id/edit', '/suppliers/:id/edit', '/categories/:id/edit', '/locations/:id/edit']) {
+  const out = runGuard(route('GET', url).handlers[0], employee);
+  assert(!out.allowed && out.code === 403, `${url} must be manager-only`);
+  const post = runGuard(route('POST', url).handlers[0], employee);
+  assert(!post.allowed && post.code === 403, `POST ${url} must be manager-only`);
+}
+assert.strictEqual(runGuard(route('POST', '/orders/:id/delete').handlers[0], employee).code, 403, 'deleting an order must be manager-only');
+for (const [method, url] of [['POST', '/inventory/:variantId/adjust'], ['GET', '/new/transaction'], ['POST', '/record/transaction'],
+  ['GET', '/orders/:id/edit'], ['POST', '/orders/:id/edit'], ['POST', '/settings/password']]) {
+  assert(runGuard(route(method, url).handlers[0], employee).allowed, `employees must be able to use ${method} ${url}`);
+}
+console.log('PASS: reports need a login; catalog edits and order deletes are manager-only; employees can adjust stock, record transactions, fix orders and change their password');
+
 // Product-creation integration simulation: mock only the Flask HTTP response,
 // exercise the actual Express route handlers and verify the posted JSON.
 async function verifyProductFlow() {
@@ -98,7 +127,7 @@ async function verifyProductFlow() {
     if (routePath === '/api/suppliers') return { ok: true, status: 200,
       text: async () => JSON.stringify([{ Supplier_ID: 2, Name: 'Houston Threads' }]) };
     if (routePath === '/api/products' && opts.method === 'POST') return { ok: true, status: 201,
-      text: async () => JSON.stringify({ message: 'Product added!' }) };
+      text: async () => JSON.stringify({ message: 'Product added!', Product_ID: 9 }) };
     if (routePath === '/api/products/7' && opts.method === 'DELETE') return { ok: false, status: 409,
       text: async () => JSON.stringify({ message: 'This product has variants and cannot be deleted.' }) };
     if (routePath === '/api/products/8' && opts.method === 'DELETE') return { ok: true, status: 200,
@@ -139,7 +168,7 @@ async function verifyProductFlow() {
     assert(allowedPost);
     await add.handlers[1](addReq, addRes);
     assert.strictEqual(addRes.redirectCode, 303);
-    assert.strictEqual(addRes.target, '/manage');
+    assert.strictEqual(addRes.target, '/products/9/variants/new'); // a new product goes straight to Add variants
     assert(addReq.session.flash.includes('New Dress'));
     const posted = calls.find(c => c.routePath === '/api/products' && c.method === 'POST');
     assert.deepStrictEqual(posted.body, { Name: 'New Dress', Category_ID: 1,
