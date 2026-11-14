@@ -1,104 +1,115 @@
+<%
+  const orderTypes = typeof types !== 'undefined' && Array.isArray(types) ? types : [];
+  const orderItems = typeof variants !== 'undefined' && Array.isArray(variants) ? variants : [];
+  const maxDate = typeof today !== 'undefined' ? today : '';
+  const itemName = v => `${v.product} – ${v.size} / ${v.color}`;
+  const current = orderItems.find(v => String(v.variant_id) === String(order.variant_id));
+  const currentType = orderTypes.find(t => t.Transaction_Type === order.transaction_type);
+  const qtyText = (typeof fmt !== 'undefined' && fmt.signed) ? fmt.signed(order.quantity_change) : order.quantity_change;
+  const dateText = (typeof fmt !== 'undefined' && fmt.date) ? fmt.date(order.date) : order.date;
+  const typeClass = 'tag tag-' + String(order.transaction_type || '').toLowerCase();
+  // Group the item list by product so it's easy to scan.
+  const byProduct = {};
+  orderItems.forEach(v => { (byProduct[v.product] = byProduct[v.product] || []).push(v); });
+%>
 <!doctype html>
 <html lang="en">
 <head>
-<%- include('../template/head', { title: 'Edit Order' }); %>
+  <%- include('../template/head', { title: 'Edit order #' + order.invoice_id }); %>
 </head>
-
 <body>
 <div class="app">
-<%- include('../template/nav', { active: 'orders' }); %>
+  <%- include('../template/nav', { active: 'orders' }); %>
+  <main class="content">
+    <%- include('../template/topbar'); %>
+    <%- include('../template/messages'); %>
 
-<main class="content">
-<%- include('../template/topbar'); %>
-<%- include('../template/messages'); %>
+    <a href="/orders" class="back-link">← Back to Orders</a>
+    <header class="page-header">
+      <p class="eyebrow">Edit order</p>
+      <h1>Order #<%= order.invoice_id %></h1>
+      <p class="order-summary">
+        <span class="<%= typeClass %>"><%= order.transaction_type %></span>
+        <span><%= order.product %> – <%= order.size %> / <%= order.color %> · <%= qtyText %> · <%= dateText %><% if (order.transaction_type === 'Restock' && order.supplier) { %> · from <%= order.supplier %><% } %> · recorded by <%= order.employee || 'N/A' %></span>
+      </p>
+    </header>
 
-<header class="page-header">
-<h1>Edit Order #<%= order.invoice_id %></h1>
-</header>
+    <div class="edit-layout">
+      <section class="panel form-panel">
+        <form action="/orders/<%= order.invoice_id %>/edit" method="POST" id="orderForm"
+              data-confirm="Save changes to order #<%= order.invoice_id %>? Stock will be updated to match."
+              data-confirm-button="Save changes"
+              data-old-variant="<%= order.variant_id %>" data-old-qty="<%= order.quantity_change %>">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="form-grid">
+            <div>
+              <label for="Transaction_Type_ID" class="form-label">Transaction type</label>
+              <select id="Transaction_Type_ID" name="Transaction_Type_ID" class="form-select" required>
+                <% orderTypes.forEach(function(t) { %>
+                  <option value="<%= t.Transaction_Type_ID %>" data-type="<%= t.Transaction_Type %>" <%= currentType && t.Transaction_Type_ID === currentType.Transaction_Type_ID ? 'selected' : '' %>><%= t.Transaction_Type %></option>
+                <% }); %>
+              </select>
+            </div>
+            <div>
+              <label for="Date" class="form-label">Date</label>
+              <input type="date" id="Date" name="Date" class="form-control" value="<%= String(order.date || '').slice(0, 10) %>" max="<%= maxDate %>" required>
+            </div>
+            <div class="span-2">
+              <label for="Variant_ID" class="form-label">Item (product / size / color)</label>
+              <select id="Variant_ID" name="Variant_ID" class="form-select" required>
+                <% if (!current) { %>
+                  <option value="<%= order.variant_id %>" selected data-stock="" data-name="<%= order.product %> – <%= order.size %> / <%= order.color %>"><%= order.product %> – <%= order.size %> / <%= order.color %></option>
+                <% } %>
+                <% Object.keys(byProduct).forEach(function(name) { %>
+                  <optgroup label="<%= name %>">
+                    <% byProduct[name].forEach(function(v) { %>
+                      <option value="<%= v.variant_id %>" data-stock="<%= v.quantity %>" data-name="<%= itemName(v) %>" <%= String(v.variant_id) === String(order.variant_id) ? 'selected' : '' %>>
+                        <%= itemName(v) %> (<%= v.quantity %> in stock)
+                      </option>
+                    <% }); %>
+                  </optgroup>
+                <% }); %>
+              </select>
+            </div>
+            <div>
+              <label for="Quantity_Change" class="form-label">Quantity change</label>
+              <input type="number" id="Quantity_Change" name="Quantity_Change" class="form-control" value="<%= order.quantity_change %>" step="1" required>
+              <span class="hint" id="signHint">Negative for a Sale, positive for a Restock. An Adjustment can be either.</span>
+            </div>
+            <div>
+              <span class="form-label d-block">Recorded by</span>
+              <p style="margin:.45rem 0 0"><%= order.employee || 'N/A' %></p>
+              <span class="hint">Can’t be changed: it shows who entered the order.</span>
+            </div>
+          </div>
+          <div class="form-actions">
+            <a href="/orders" class="btn btn-outline-secondary">Cancel</a>
+            <span class="spacer"></span>
+            <button type="submit" class="scc-btn">Save changes</button>
+          </div>
+        </form>
+        <% if (Role === 'Manager') { %>
+          <hr>
+          <form action="/orders/<%= order.invoice_id %>/delete" method="POST"
+                data-confirm="Delete order #<%= order.invoice_id %> (<%= order.transaction_type %>, <%= order.product %> <%= order.size %> / <%= order.color %>)? This reverses its stock change."
+                data-confirm-button="Delete order" data-confirm-style="danger">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="btn btn-outline-danger">Delete order</button>
+          </form>
+        <% } %>
+      </section>
 
-<section class="panel form-panel">
+      <aside class="info-box" aria-live="polite">
+        <span class="title">What saving will do</span>
+        <span id="stockPreview">Nothing changes until you edit a field.</span>
+      </aside>
+    </div>
 
-<h2>Order Information</h2>
-
-<div class="mb-3">
-<p><strong>Invoice:</strong> #<%= order.invoice_id %></p>
-<p><strong>Date:</strong> <%= fmt.date(order.date) %></p>
-<p><strong>Transaction Type:</strong> <%= order.transaction_type %></p>
-<p><strong>Product:</strong> <%= order.product %></p>
-<p><strong>Size:</strong> <%= order.size %></p>
-<p><strong>Color:</strong> <%= order.color %></p>
-<p><strong>Employee:</strong> <%= order.employee || 'N/A' %></p>
+    <%- include('../template/footer'); %>
+  </main>
 </div>
-
-<hr>
-
-<h2>Edit Quantity</h2>
-
-<form action="/orders/<%= order.invoice_id %>/edit"
-      method="POST"
-      data-confirm="Save changes to this order? Inventory will be adjusted."
-      data-confirm-button="Save Changes">
-
-<input type="hidden" name="_csrf" value="<%= csrfToken %>">
-
-<div class="mb-3">
-<label for="Quantity_Change" class="form-label">
-Quantity Change
-</label>
-
-<input type="number"
-       class="form-control"
-       id="Quantity_Change"
-       name="Quantity_Change"
-       value="<%= order.quantity_change %>"
-       step="1"
-       required>
-
-<p>
-Enter a negative number for a Sale
-or a positive number for a Restock.
-</p>
-</div>
-
-<button type="submit" class="btn btn-primary">
-Save Changes
-</button>
-
-<a href="/orders" class="btn btn-outline-secondary">
-Cancel
-</a>
-
-</form>
-
-<!-- MANAGER-ONLY DELETE -->
-<% if (Role === 'Manager') { %>
-
-<hr>
-
-<form action="/orders/<%= order.invoice_id %>/delete"
-      method="POST"
-      data-confirm="Are you sure you want to delete this order? This will reverse its inventory change."
-      data-confirm-button="Delete"
-      data-confirm-style="danger">
-
-<input type="hidden" name="_csrf" value="<%= csrfToken %>">
-
-<button type="submit" class="btn btn-outline-danger">
-Delete Order
-</button>
-
-</form>
-
-<% } %>
-
-</section>
-
-<%- include('../template/footer'); %>
-</main>
-</div>
-
 <%- include('../template/scripts'); %>
 <%- include('../template/confirm'); %>
-
+<script src="/js/edit-order.js?v=4"></script>
 </body>
 </html>

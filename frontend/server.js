@@ -6,7 +6,7 @@
 
 const crypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
-const { buildDonut, buildTrend } = require('./lib/charts');
+const { buildDonut, buildFlow } = require('./lib/charts');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -42,6 +42,10 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'same-origin');
   next();
 });
+
+// pdf.js for the PDF preview window (public/js/pdf-viewer.js), served from node_modules like Client Tracker does.
+// Registered before public/ (frontend/tests/check_routes.js expects public/ to be the last static folder).
+app.use('/vendor/pdfjs', express.static(path.join(__dirname, '..', 'node_modules', 'pdfjs-dist', 'build')));
 
 // The merged project keeps assets in root/public/ alongside frontend/.
 const publicDir = [path.join(__dirname, '..', 'public'), path.join(__dirname, 'public')]
@@ -125,6 +129,13 @@ app.use(async (req, res, next) => {
   res.locals.env = env;
   res.locals.fmt = fmt;
   res.locals.api = { status: 'unknown' };
+  // "New" marks in dropdowns and chips: catalog entries by name, products and variants by ID (see markRecent)
+  const recent = recentIds(req);
+  res.locals.isNew = (kind, key) => {
+    const list = recent[kind === 'products' || kind === 'variants' ? kind : `catalog-${kind}`] || [];
+    return list.includes(kind === 'products' || kind === 'variants' ? String(key) : String(key ?? '').toLowerCase());
+  };
+  res.locals.newLabel = (kind, key, label) => res.locals.isNew(kind, key) ? `★ ${label} · New` : label;
   res.locals.message = req.session.flash || null;
   res.locals.ErrorMessage = null;
   if (req.session.flash) delete req.session.flash;
@@ -217,12 +228,33 @@ function page(req, res, view, values = {}, status = 200) {
     ...values
   });
 }
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function errorPage(req, res, status, title, detail) {
   return page(req, res, 'error', { title, detail }, status);
 }
 function flashAndRedirect(req, res, message, destination = '/') {
   req.session.flash = String(message || 'Action completed.');
   return res.redirect(303, destination);
+}
+// "Just added" highlights: what you added or changed in the last 15 minutes is highlighted and tagged
+// on Inventory and Orders (so it stands out in a demo full of test data). Kept in your own session only.
+const RECENT_MINUTES = 15;
+function markRecent(req, kind, id) {
+  if (id === null || id === undefined || id === '') return;
+  const recent = req.session.recent || (req.session.recent = {});
+  (recent[kind] || (recent[kind] = {}))[String(id)] = Date.now();
+}
+function recentIds(req) {
+  const cutoff = Date.now() - RECENT_MINUTES * 60 * 1000;
+  const out = {};
+  for (const [kind, ids] of Object.entries(req.session.recent || {})) {
+    out[kind] = Object.keys(ids).filter(id => ids[id] >= cutoff);
+    for (const id of Object.keys(ids)) if (ids[id] < cutoff) delete ids[id];
+  }
+  return out;
 }
 function accessDenied(req, res, status, reason) {
   return page(req, res, 'accessdenial', {
@@ -256,10 +288,13 @@ app.get('/', pageAccess, async (req, res) => {
   } catch (err) {
     message = [message, apiError(err, 'Live dashboard metrics are unavailable.')].filter(Boolean).join(' ');
   }
+  // Recent orders card: Sales by default, with Restocks and Adjustments as tabs (?recent=Restock).
+  const recentType = ['Sale', 'Restock', 'Adjustment'].includes(req.query.recent) ? req.query.recent : 'Sale';
   return page(req, res, 'index', {
     api, data,
     donut: buildDonut(data.sales?.by_category || []),
-    trend: buildTrend(Array.isArray(data.trend) ? data.trend : []),
+    flow: buildFlow(data.stock_weeks),
+    recentType,
     message
   });
 });
@@ -412,6 +447,8 @@ async function loadInventory() {
       Size: x.Size ?? x.size,
       Color: x.Color ?? x.color,
       Location: x.Location ?? x.location,
+      Category: x.Category ?? x.category ?? '',
+      Available: x.Available ?? x.available ?? x.Availability ?? null,
       Quantity: x.Quantity ?? x.quantity,
       Price: x.Price ?? x.price
     }));
@@ -422,28 +459,149 @@ async function loadInventory() {
     return legacyInventory();
   }
 }
+// Groups the inventory rows under their product, so each product shows its total and its sizes/colors.
+// Products that have no variants yet are added from the product list, so they don't disappear.
+function groupInventory(rows, products, categories, threshold) {
+  const categoryNames = new Map(arrayData(categories).map(c => [String(c.Category_ID), c.Category]));
+  const groups = new Map();
+  for (const row of rows) {
+    const key = String(row.Product_ID ?? row.Product);
+    if (!groups.has(key)) {
+      groups.set(key, { id: row.Product_ID, name: row.Product || 'Unknown product', category: row.Category || '',
+        available: row.Available === undefined || row.Available === null ? true : Boolean(Number(row.Available)), variants: [] });
+    }
+    groups.get(key).variants.push(row);
+  }
+  for (const p of arrayData(products)) {
+    const key = String(p.Product_ID);
+    const available = p.Availability === undefined || p.Availability === null ? true : Boolean(Number(p.Availability));
+    if (groups.has(key)) {
+      const group = groups.get(key);
+      if (!group.category) group.category = categoryNames.get(String(p.Category_ID)) || '';
+      group.available = available;
+    } else {
+      groups.set(key, { id: p.Product_ID, name: p.Name, category: categoryNames.get(String(p.Category_ID)) || '', available, variants: [] });
+    }
+  }
+  return [...groups.values()].map(g => {
+    // A summary for the product row, so a collapsed product still shows where it is and what it costs:
+    // one location / one price, or how many locations / the price range.
+    const locations = [...new Set(g.variants.map(v => v.Location || 'Unassigned'))];
+    const prices = g.variants.map(v => Number(v.Price)).filter(Number.isFinite);
+    return {
+      ...g,
+      total: g.variants.reduce((sum, v) => sum + (Number(v.Quantity) || 0), 0),
+      low: g.variants.filter(v => Number(v.Quantity) <= threshold).length,
+      locations,
+      priceMin: prices.length ? Math.min(...prices) : null,
+      priceMax: prices.length ? Math.max(...prices) : null
+    };
+  }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+// INVENTORY FILTERS (this page only): ?q= search, ?category=, ?stock=low|out|in, ?status=available|unavailable.
+// The old ?low=1 link (Dashboard) still means stock=low.
+function cleanSearch(value) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 100) : '';
+}
+function inventoryFilters(query, groups) {
+  const q = cleanSearch(query.q);
+  const stock = ['low', 'out', 'in'].includes(query.stock) ? query.stock : (query.low === '1' ? 'low' : '');
+  const status = ['available', 'unavailable'].includes(query.status) ? query.status : '';
+  const wanted = typeof query.category === 'string' ? query.category.slice(0, 100) : '';
+  // only a category that exists (groups is null when we just rebuild the address)
+  const category = wanted && (!groups || groups.some(g => g.category === wanted)) ? wanted : '';
+  return { q, category, stock, status };
+}
+function inventoryQuery(filters, extra = {}) {
+  const all = { ...filters, ...extra };
+  return Object.keys(all).filter(k => all[k]).map(k => `${k}=${encodeURIComponent(all[k])}`).join('&');
+}
+function filterInventory(allGroups, filters, threshold) {
+  const words = filters.q.toLowerCase().split(' ').filter(Boolean);
+  const has = (text, word) => String(text || '').toLowerCase().includes(word);
+  const stockOk = v => {
+    const qty = Number(v.Quantity) || 0;
+    if (filters.stock === 'low') return qty <= threshold;
+    if (filters.stock === 'out') return qty === 0;
+    if (filters.stock === 'in') return qty > 0;
+    return true;
+  };
+  // counts for the pills: for everything that matches the search, category and status
+  const counts = { low: 0, out: 0, in: 0, available: 0, unavailable: 0 };
+  const groups = [];
+  for (const g of allGroups) {
+    if (filters.category && g.category !== filters.category) continue;
+    // every search word must be found in the product (name, category) or in the variant (size, color, location)
+    const variantText = v => [g.name, g.category, v.Size, v.Color, v.Location].join(' ');
+    const productMatches = words.every(w => has(g.name, w) || has(g.category, w));
+    const matching = words.length ? g.variants.filter(v => words.every(w => has(variantText(v), w))) : g.variants;
+    if (words.length && !productMatches && !matching.length) continue;
+    const searched = productMatches ? g.variants : matching;
+    if (!filters.status || (filters.status === 'available') === (g.available !== false)) {
+      for (const v of searched) {
+        const qty = Number(v.Quantity) || 0;
+        if (qty <= threshold) counts.low++;
+        if (qty === 0) counts.out++;
+        if (qty > 0) counts.in++;
+      }
+    }
+    if (!filters.stock || searched.some(stockOk)) counts[g.available === false ? 'unavailable' : 'available']++;
+    if (filters.status && (filters.status === 'available') !== (g.available !== false)) continue;
+    const variants = searched.filter(stockOk);
+    // a stock filter hides products with nothing left that fits it (and products with no variants)
+    if (filters.stock && !variants.length) continue;
+    groups.push(variants === g.variants ? g : { ...g, variants });
+  }
+  return { groups, counts };
+}
+
 app.get('/inventory', pageAccess, async (req, res) => {
   try {
-    const result = await loadInventory();
-    return page(req, res, 'inventory', { ...result, dataAvailable: true });
+    const [result, products, categories] = await Promise.all([
+      loadInventory(),
+      apiGet('/api/products').catch(() => []),
+      apiGet('/api/categories').catch(() => [])
+    ]);
+    const allGroups = groupInventory(result.rows, products, categories, result.threshold);
+    const filters = inventoryFilters(req.query, allGroups);
+    const { groups, counts } = filterInventory(allGroups, filters, result.threshold);
+    // ?adjust=<Variant_ID> opens that row in Adjust stock mode (chosen from its ⋯ menu).
+    const adjusting = /^[1-9]\d*$/.test(String(req.query.adjust || '')) ? String(req.query.adjust) : null;
+    const recent = recentIds(req);
+    return page(req, res, 'inventory', {
+      ...result, groups, allGroups, filters, counts, lowOnly: filters.stock === 'low', lowCount: counts.low,
+      categoryNames: [...new Set(allGroups.map(g => g.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+      adjusting, dataAvailable: true,
+      newProducts: recent.products || [], newVariants: recent.variants || [], updatedVariants: recent.adjusted || []
+    });
   } catch (err) {
     console.error('Inventory load failed:', err.message);
     return page(req, res, 'inventory', {
-      items: [], rows: [], threshold: 5, dataAvailable: false,
+      items: [], rows: [], groups: [], allGroups: [], lowOnly: false, lowCount: 0, adjusting: null, threshold: 5, dataAvailable: false,
+      filters: inventoryFilters({}, []), counts: { low: 0, out: 0, in: 0, available: 0, unavailable: 0 }, categoryNames: [],
       message: apiError(err, 'Inventory could not be loaded.')
     });
   }
 });
 app.post('/inventory/:variantId/adjust', signedIn, async (req, res) => {
+  // come back to the same filtered view (the form sends the page's filters along)
+  const kept = inventoryQuery(inventoryFilters(Object.fromEntries(new URLSearchParams(String(req.body.filters || '').slice(0, 300))), null));
+  const back = `/inventory${kept ? '?' + kept : ''}#v${encodeURIComponent(req.params.variantId)}`;
+  const quantity = String(req.body.New_Quantity ?? '').trim();
+  if (!/^\d+$/.test(quantity) || !Number.isSafeInteger(Number(quantity))) {
+    return flashAndRedirect(req, res, 'Enter the new stock count as a whole number (0 or more).',
+      `/inventory?${kept ? kept + '&' : ''}adjust=${encodeURIComponent(req.params.variantId)}#v${encodeURIComponent(req.params.variantId)}`);
+  }
   try {
     const result = await apiPut('/adjust/inventory', {
       Variant_ID: req.params.variantId,
-      New_Quantity: req.body.New_Quantity,
+      New_Quantity: Number(quantity),
       Employee_ID: req.session.user.id
     });
-    return flashAndRedirect(req, res, result?.message || 'Inventory adjusted.', '/inventory');
+    markRecent(req, 'adjusted', req.params.variantId);
+    return flashAndRedirect(req, res, result?.message || 'Inventory adjusted.', back);
   } catch (err) {
-    return flashAndRedirect(req, res, apiError(err, 'Unable to adjust inventory.'), '/inventory');
+    return flashAndRedirect(req, res, apiError(err, 'Unable to adjust inventory.'), back);
   }
 });
 
@@ -463,13 +621,23 @@ function normalizeOrder(r) {
 }
 app.get('/orders', pageAccess, async (req, res) => {
   const selected = typeof req.query.type === 'string' ? req.query.type : '';
-  const fallback = { rows: [], types: [], selected, limit: 100, dataAvailable: false };
+  // 100 orders per page, newest first; ?page=2 shows the next 100 older ones.
+  const pageNumber = /^[1-9]\d{0,5}$/.test(String(req.query.page || '')) ? Number(req.query.page) : 1;
+  // ?q= searches the orders (order #, product, size, color, type, employee); ?from= / ?to= limit the dates.
+  // The search runs in the database query, so it covers every order, not just this page of 100.
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
+  const q = cleanSearch(req.query.q);
+  let from = validDate(req.query.from) ? String(req.query.from) : '';
+  let to = validDate(req.query.to) ? String(req.query.to) : '';
+  if (from && to && from > to) [from, to] = [to, from];
+  const fallback = { rows: [], types: [], selected, q, from, to, limit: 100, pageNumber, hasMore: false, dataAvailable: false };
   try {
-    const reply = await apiGet('/orders', { type: selected, limit: 100 });
+    const reply = await apiGet('/orders', { type: selected, q, from, to, limit: 100, offset: (pageNumber - 1) * 100 });
     const rows = arrayData(Array.isArray(reply) ? reply : reply?.rows).map(normalizeOrder);
     return page(req, res, 'orders', {
       ...fallback, rows, types: arrayData(reply?.types),
-      limit: Number(reply?.limit) || 100, dataAvailable: true
+      limit: Number(reply?.limit) || 100, hasMore: Boolean(reply?.has_more), dataAvailable: true,
+      newOrders: recentIds(req).orders || []
     });
   } catch (err) {
     return page(req, res, 'orders', {
@@ -488,24 +656,297 @@ const reportPeriods = [
 ];
 app.get('/reports/best-sellers', pageAccess, async (req, res) => {
   const requested = Number(req.query.days ?? 30);
-  const days = reportPeriods.some(p => p.days === requested) ? requested : 30;
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
+  // a custom From / To range, or one of the preset periods
+  let from = validDate(req.query.from) ? String(req.query.from) : '';
+  let to = validDate(req.query.to) ? String(req.query.to) : '';
+  if (from && to && from > to) [from, to] = [to, from];
+  const custom = Boolean(from && to);
+  const days = custom ? null : (reportPeriods.some(p => p.days === requested) ? requested : 30);
   const view = req.query.view === 'item' ? 'item' : 'product';
-  const fallback = { days, view, periods: reportPeriods, byProduct: [], byItem: [], totalUnits: 0, totalRevenue: 0, dataAvailable: false };
+  // the Sales report dates for each product's link (all time: from that product's first sale)
+  const today = localToday();
+  const salesFrom = custom ? from : (days ? isoDate(new Date(Date.now() - (days - 1) * 86400000)) : '');
+  const salesTo = custom ? to : today;
+  const fallback = { days, view, custom, from, to, salesFrom, salesTo, periods: reportPeriods, byProduct: [], byItem: [], totalUnits: 0, totalRevenue: 0, dataAvailable: false };
   try {
     // 30 seconds instead of the usual 10: the report runs two bigger queries and the AWS database can be slow.
-    const reply = await apiRequest('GET', '/report/best/sellers', { query: { days }, timeoutMs: 30000 });
-    return page(req, res, 'bestsellers', {
-      ...fallback,
-      byProduct: arrayData(reply?.by_product),
-      byItem: arrayData(reply?.by_item),
-      totalUnits: Number(reply?.total_units) || 0,
-      totalRevenue: Number(reply?.total_revenue) || 0,
-      dataAvailable: true
-    });
+    const reply = await apiRequest('GET', '/report/best/sellers', { query: custom ? { from, to } : { days }, timeoutMs: 30000 });
+    const byProduct = arrayData(reply?.by_product);
+    const byItem = arrayData(reply?.by_item);
+    const period = custom ? `${fmt.date(from)} – ${fmt.date(to)}` : reportPeriods.find(p => p.days === days).label;
+    const values = {
+      ...fallback, byProduct, byItem,
+      totalUnits: Number(reply?.total_units) || 0, totalRevenue: Number(reply?.total_revenue) || 0, dataAvailable: true
+    };
+    const name = `best-sellers-by-${view}-${custom ? from + '-to-' + to : (days ? days + '-days' : 'all-time')}`;
+    return reportOutput(req, res, 'bestsellers', values, { filename: name, title: `Best sellers · ${period}` }, () =>
+      view === 'item'
+        ? sendExcel(res, name, 'Best sellers', [
+            { header: 'Rank', type: 'int' }, { header: 'Product' }, { header: 'Size' }, { header: 'Color' },
+            { header: 'Units sold', type: 'int' }, { header: 'Total sales', type: 'money' },
+            { header: 'First sold', type: 'date' }, { header: 'Last sold', type: 'date' }],
+            byItem.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Size, r.Color, r.Units_Sold, r.Revenue, r.First_Sold, r.Last_Sold]),
+            `Space City Couture · Best sellers by size and color · ${period}`)
+        : sendExcel(res, name, 'Best sellers', [
+            { header: 'Rank', type: 'int' }, { header: 'Product' }, { header: 'Category' },
+            { header: 'Units sold', type: 'int' }, { header: 'Total sales', type: 'money' },
+            { header: 'First sold', type: 'date' }, { header: 'Last sold', type: 'date' }],
+            byProduct.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Category, r.Units_Sold, r.Revenue, r.First_Sold, r.Last_Sold]),
+            `Space City Couture · Best sellers by product · ${period}`));
   } catch (err) {
     return page(req, res, 'bestsellers', {
       ...fallback, message: apiError(err, 'The best sellers report is unavailable.')
     });
+  }
+});
+
+// REPORTS (R-10): an inventory report and a sales report, plus Best sellers and Edit history. Each one has
+// "Preview PDF" (a real PDF shown in a preview window, public/js/pdf-viewer.js) and "Download Excel" (.xlsx).
+// Cost, stock value and profit are shown to managers only.
+function isManagerReq(req) {
+  return String(req.session.user?.role || '').toLowerCase() === 'manager';
+}
+
+// ---- Excel downloads: a real .xlsx (column widths, dates as dates, money as $, bold header) ----
+// columns: [{ header, type: 'text' | 'int' | 'money' | 'date' | 'datetime', width }]; rows: arrays in the same order.
+async function sendExcel(res, filename, sheetName, columns, rows, titleLine) {
+  const ExcelJS = require('exceljs');
+  const book = new ExcelJS.Workbook();
+  book.creator = 'Space City Couture';
+  const sheet = book.addWorksheet(sheetName.slice(0, 31), { views: [{ state: 'frozen', ySplit: titleLine ? 3 : 1 }] });
+  const toValue = (value, type) => {
+    if (value === null || value === undefined || value === '') return null;
+    if (type === 'int' || type === 'money') { const n = Number(value); return Number.isFinite(n) ? n : String(value); }
+    if (type === 'date') {
+      const [y, m, d] = String(value).slice(0, 10).split('-').map(Number);
+      return y ? new Date(Date.UTC(y, m - 1, d)) : String(value);
+    }
+    if (type === 'datetime') {
+      // stored as local time "YYYY-MM-DDTHH:MM:SS"; written as the same wall-clock time
+      const t = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+      return t ? new Date(Date.UTC(+t[1], +t[2] - 1, +t[3], +t[4], +t[5], +(t[6] || 0))) : String(value);
+    }
+    return String(value);
+  };
+  if (titleLine) {
+    sheet.addRow([titleLine]).font = { bold: true, size: 13 };
+    sheet.addRow([]);
+  }
+  const header = sheet.addRow(columns.map(c => c.header));
+  header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  header.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000AA' } }; });
+  for (const row of rows) sheet.addRow(columns.map((c, i) => toValue(row[i], c.type)));
+  columns.forEach((c, i) => {
+    const col = sheet.getColumn(i + 1);
+    const longest = Math.max(String(c.header).length, ...rows.map(r => String(r[i] ?? '').length));
+    const minimum = { date: 12, datetime: 20, money: 13 }[c.type] || 8;
+    col.width = c.width || Math.min(48, Math.max(minimum, longest + 3));
+    if (c.type === 'money') col.numFmt = '$#,##0.00;[Red]-$#,##0.00';
+    if (c.type === 'date') col.numFmt = 'm/d/yyyy';
+    if (c.type === 'datetime') col.numFmt = 'm/d/yyyy h:mm AM/PM';
+    if (c.type === 'int') col.numFmt = '#,##0';
+  });
+  sheet.autoFilter = { from: { row: header.number, column: 1 }, to: { row: header.number, column: columns.length } };
+  const buffer = await book.xlsx.writeBuffer();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\w.-]/g, '_')}.xlsx"`);
+  return res.send(Buffer.from(buffer));
+}
+
+// ---- PDFs: the report page is printed to PDF by Microsoft Edge (or Chrome) running in the background ----
+// It uses the print layout in styles.css, so the PDF matches what the browser would print.
+const PDF_BROWSERS = [
+  process.env.PDF_BROWSER,
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/microsoft-edge', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'
+].filter(Boolean);
+let pdfBrowserPromise = null;
+async function pdfBrowser() {
+  if (pdfBrowserPromise) {
+    const open = await pdfBrowserPromise.catch(() => null);
+    if (open && open.connected) return open;
+    pdfBrowserPromise = null;
+  }
+  const executablePath = PDF_BROWSERS.find(p => fs.existsSync(p));
+  if (!executablePath) {
+    throw new Error('Making a PDF needs Microsoft Edge or Google Chrome installed (or PDF_BROWSER set to one in .env).');
+  }
+  const puppeteer = require('puppeteer-core');
+  pdfBrowserPromise = puppeteer.launch({ executablePath, headless: true, args: ['--disable-gpu', '--no-first-run'] });
+  pdfBrowserPromise.catch(() => { pdfBrowserPromise = null; });
+  return pdfBrowserPromise;
+}
+async function sendPdf(req, res, view, values, { filename, title, landscape = false }) {
+  const html = await new Promise((resolve, reject) =>
+    app.render(`pages/${view}`, { ...res.locals, ...values, pdfMode: true }, (err, out) => err ? reject(err) : resolve(out)));
+  const browser = await pdfBrowser();
+  const tab = await browser.newPage();
+  try {
+    // <base> lets the page load its CSS and logo from this server
+    await tab.setContent(html.replace('<head>', `<head><base href="http://127.0.0.1:${PORT}/">`), { waitUntil: 'load', timeout: 20000 });
+    await tab.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
+    await tab.emulateMediaType('print');
+    const safeTitle = String(title).replace(/[<>&"]/g, '');
+    const pdf = await tab.pdf({
+      format: 'Letter', landscape, printBackground: true,
+      margin: { top: '12mm', bottom: '16mm', left: '10mm', right: '10mm' },
+      displayHeaderFooter: true, headerTemplate: '<span></span>',
+      footerTemplate: `<div style="width:100%;font-size:8px;color:#666;padding:0 10mm;display:flex;justify-content:space-between;font-family:Arial,sans-serif">
+        <span>Space City Couture · ${safeTitle}</span><span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${filename.replace(/[^\w.-]/g, '_')}.pdf"`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(Buffer.from(pdf));
+  } finally {
+    await tab.close().catch(() => {});
+  }
+}
+// A report route answers ?format=pdf with a PDF, ?format=xlsx with Excel, and otherwise shows the page.
+async function reportOutput(req, res, view, values, pdfOptions, excel) {
+  try {
+    if (req.query.format === 'pdf') return await sendPdf(req, res, view, values, pdfOptions);
+    if ((req.query.format === 'xlsx' || req.query.format === 'csv') && excel) return await excel();
+  } catch (err) {
+    console.error('Report export failed:', err.message);
+    return res.status(500).type('text/plain').send(`The ${req.query.format === 'pdf' ? 'PDF' : 'Excel file'} could not be made. ${err.message}`);
+  }
+  return page(req, res, view, values);
+}
+app.get('/reports', pageAccess, (req, res) => res.redirect('/reports/sales'));
+
+app.get('/reports/inventory', pageAccess, async (req, res) => {
+  const lowOnly = req.query.low === '1';
+  const manager = isManagerReq(req);
+  const fallback = { lowOnly, manager, rows: [], totals: null, threshold: 5, generated: localToday(), dataAvailable: false };
+  try {
+    const reply = await apiRequest('GET', '/report/inventory', { timeoutMs: 30000 });
+    let rows = arrayData(reply?.rows);
+    if (lowOnly) rows = rows.filter(r => r.status);
+    const generated = reply?.generated || localToday();
+    const values = {
+      ...fallback, rows, totals: reply?.totals || null,
+      threshold: Number(reply?.low_stock_threshold ?? 5), generated, dataAvailable: true
+    };
+    const name = `inventory-report-${lowOnly ? 'low-stock-' : ''}${generated}`;
+    const title = `${lowOnly ? 'Inventory report: low stock' : 'Inventory report'} · ${fmt.date(generated)}`;
+    return reportOutput(req, res, 'report-inventory', values, { filename: name, title, landscape: true }, () => {
+      const columns = [{ header: 'Product' }, { header: 'Category' }, { header: 'Supplier' }, { header: 'Size' }, { header: 'Color' },
+        { header: 'Location' }, { header: 'In stock', type: 'int' }, { header: 'Status' }, { header: 'Available' }]
+        .concat(manager
+          ? [{ header: 'Cost', type: 'money' }, { header: 'Price', type: 'money' }, { header: 'Stock value at cost', type: 'money' }, { header: 'Stock value at price', type: 'money' }]
+          : [{ header: 'Price', type: 'money' }]);
+      return sendExcel(res, name, 'Inventory', columns, rows.map(r =>
+        [r.product, r.category, r.supplier || '', r.size, r.color, r.location || '', r.quantity, r.status || 'OK', r.available ? 'Yes' : 'No']
+          .concat(manager ? [r.cost, r.price, r.value_cost, r.value_retail] : [r.price])),
+        `Space City Couture · ${title}`);
+    });
+  } catch (err) {
+    return page(req, res, 'report-inventory', { ...fallback, message: apiError(err, 'The inventory report is unavailable.') });
+  }
+});
+
+// Date range shortcuts for the sales report. Dates are in this computer's time zone, like invoice dates.
+function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function salesRanges() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const daysAgo = n => { const d = new Date(now); d.setDate(d.getDate() - n); return d; };
+  return [
+    { key: 'this-month', label: 'This month', from: isoDate(new Date(y, m, 1)), to: isoDate(now) },
+    { key: 'last-month', label: 'Last month', from: isoDate(new Date(y, m - 1, 1)), to: isoDate(new Date(y, m, 0)) },
+    { key: 'last-30', label: 'Last 30 days', from: isoDate(daysAgo(29)), to: isoDate(now) },
+    { key: 'this-year', label: 'This year', from: isoDate(new Date(y, 0, 1)), to: isoDate(now) }
+  ];
+}
+// EDIT HISTORY (managers): every change made in the app, who made it, and the old -> new values.
+// Kept by the Flask API in backend/edit_history.jsonl (see backend/history.py).
+app.get('/reports/history', managerOnly, async (req, res) => {
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
+  const area = typeof req.query.area === 'string' ? req.query.area : '';
+  const person = typeof req.query.employee === 'string' && /^\d+$/.test(req.query.employee) ? req.query.employee : '';
+  const from = validDate(req.query.from) ? String(req.query.from) : '';
+  const to = validDate(req.query.to) ? String(req.query.to) : '';
+  const q = cleanSearch(req.query.q);
+  const exporting = ['pdf', 'xlsx', 'csv'].includes(req.query.format);
+  // the PDF and Excel file hold every matching change; the page shows 100 at a time
+  const pageNumber = !exporting && /^[1-9]\d{0,5}$/.test(String(req.query.page || '')) ? Number(req.query.page) : 1;
+  const filters = { area, employee: person, from, to, q };
+  const fallback = { ...filters, pageNumber, entries: [], total: 0, hasMore: false, areas: [], people: [], dataAvailable: false };
+  try {
+    const reply = await apiRequest('GET', '/history', {
+      query: { ...filters, limit: exporting ? 1000 : 100, offset: (pageNumber - 1) * 100 }, timeoutMs: 30000
+    });
+    const entries = arrayData(reply?.entries);
+    const values = {
+      ...fallback, entries, total: Number(reply?.total) || 0, hasMore: exporting ? false : Boolean(reply?.has_more),
+      areas: arrayData(reply?.areas), people: arrayData(reply?.people), dataAvailable: true
+    };
+    const name = `edit-history${from ? '-from-' + from : ''}${to ? '-to-' + to : ''}`;
+    return reportOutput(req, res, 'report-history', values, { filename: name, title: `Edit history${area ? ' · ' + area : ''}` }, () => {
+      const rows = [];
+      for (const e of entries) {
+        const changes = arrayData(e.changes);
+        const base = [e.time, e.employee, e.area, e.action, e.kind, e.target];
+        if (!changes.length) rows.push([...base, '', '', '']);
+        for (const c of changes) rows.push([...base, c.field, c.from, c.to]);
+      }
+      return sendExcel(res, name, 'Edit history', [
+        { header: 'When', type: 'datetime' }, { header: 'Who' }, { header: 'Type' }, { header: 'Action' }, { header: 'What' },
+        { header: 'Name' }, { header: 'Field' }, { header: 'Before' }, { header: 'After' }], rows,
+        `Space City Couture · Edit history${area ? ' · ' + area : ''}`);
+    });
+  } catch (err) {
+    return page(req, res, 'report-history', { ...fallback, message: apiError(err, 'The edit history is unavailable.') });
+  }
+});
+
+app.get('/reports/sales', pageAccess, async (req, res) => {
+  const ranges = salesRanges();
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
+  const preset = ranges.find(r => r.key === req.query.range);
+  let from = preset ? preset.from : (validDate(req.query.from) ? String(req.query.from) : ranges[0].from);
+  let to = preset ? preset.to : (validDate(req.query.to) ? String(req.query.to) : ranges[0].to);
+  if (from > to) [from, to] = [to, from];
+  const rangeKey = (ranges.find(r => r.from === from && r.to === to) || {}).key || 'custom';
+  const manager = isManagerReq(req);
+  // ?product=<id>: only that product's sales (Best sellers links here)
+  const productId = /^[1-9]\d*$/.test(String(req.query.product || '')) ? String(req.query.product) : '';
+  const fallback = { from, to, rangeKey, ranges, manager, productId, productName: '', summary: null, byProduct: [], byCategory: [], byDay: [], sales: [], generated: localToday(), dataAvailable: false };
+  try {
+    const reply = await apiRequest('GET', '/report/sales', { query: { from, to, product_id: productId || undefined }, timeoutMs: 30000 });
+    const values = {
+      ...fallback, summary: reply?.summary || null,
+      byProduct: arrayData(reply?.by_product), byCategory: arrayData(reply?.by_category), byDay: arrayData(reply?.by_day),
+      sales: arrayData(reply?.sales), generated: reply?.generated || localToday(), dataAvailable: true
+    };
+    if (productId) {
+      const products = await apiGet('/api/products').catch(() => []);
+      values.productName = (arrayData(products).find(p => String(p.Product_ID) === productId) || {}).Name || 'this product';
+    }
+    const name = `sales-report-${from}-to-${to}${productId ? '-product-' + productId : ''}`;
+    const title = `Sales report · ${fmt.date(from)} – ${fmt.date(to)}${values.productName ? ' · ' + values.productName : ''}`;
+    return reportOutput(req, res, 'report-sales', values, { filename: name, title }, () => {
+      // One row per sale (order): its units, the price of one item, and that sale's total (units × unit price).
+      const columns = [{ header: 'Date', type: 'date' }, { header: 'Order #', type: 'int' }, { header: 'Product' }, { header: 'Category' },
+        { header: 'Size' }, { header: 'Color' }, { header: 'Units', type: 'int' }, { header: 'Unit price', type: 'money' }, { header: 'Sale total', type: 'money' }]
+        .concat(manager ? [{ header: 'Cost', type: 'money' }, { header: 'Profit', type: 'money' }] : [])
+        .concat([{ header: 'Recorded by' }]);
+      return sendExcel(res, name, 'Sales', columns, values.sales.map(r =>
+        [r.date, r.invoice_id, r.product, r.category, r.size, r.color, r.units, r.price, r.revenue]
+          .concat(manager ? [r.cost_total, r.profit] : []).concat([r.employee])),
+        `Space City Couture · ${title} · one row per sale`);
+    });
+  } catch (err) {
+    return page(req, res, 'report-sales', { ...fallback, message: apiError(err, 'The sales report is unavailable.') });
   }
 });
 
@@ -573,6 +1014,17 @@ app.post('/record/transaction', signedIn, async (req, res) => {
       );
     }
 
+    // A product set to Not available can't be sold (it can still be restocked).
+    const item = inventory.items.find(v => Number(v.variant_id) === variantId);
+    const isAvailable = v => !(v.available === false || v.available === 0 || v.available === '0');
+    if (selected.Transaction_Type === 'Sale' && item && !isAvailable(item)) {
+      return flashAndRedirect(
+        req, res,
+        `${item.product} is set to Not available, so it can't be sold. Set it back to Available on Edit product first.`,
+        '/new/transaction'
+      );
+    }
+
     const change =
       selected.Transaction_Type === 'Sale'
         ? -quantity
@@ -585,10 +1037,13 @@ app.post('/record/transaction', signedIn, async (req, res) => {
       Employee_ID: req.session.user.id
     });
 
+    const newOrder = Number(result?.Invoice_ID);
+    if (Number.isSafeInteger(newOrder) && newOrder > 0) markRecent(req, 'orders', newOrder);
+    markRecent(req, 'adjusted', variantId);
     return flashAndRedirect(
       req, res,
       result?.message || 'Transaction recorded.',
-      '/orders'
+      Number.isSafeInteger(newOrder) && newOrder > 0 ? `/orders#o${newOrder}` : '/orders'
     );
   } catch (err) {
     return flashAndRedirect(
@@ -599,23 +1054,37 @@ app.post('/record/transaction', signedIn, async (req, res) => {
   }
 });
 
-// Find an existing order by invoice ID.
+// Find an existing order by invoice ID (any order, however old).
 async function findOrder(id) {
-  const reply = await apiGet('/orders', { limit: 200 });
+  if (!/^[1-9]\d*$/.test(String(id))) return null;
+  try {
+    return normalizeOrder(await apiGet(`/orders/${encodeURIComponent(id)}`));
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
 
-  const rows = arrayData(
-    Array.isArray(reply) ? reply : reply?.rows
-  ).map(normalizeOrder);
-
-  return rows.find(
-    r => String(r.invoice_id) === String(id)
-  ) || null;
+// EDIT ORDER: the type, item (product / size / color), date and quantity can all be corrected.
+// The API moves the stock when the quantity or item changes. "Recorded by" can't be changed.
+async function loadOrderForm(id) {
+  const [order, inventory, allTypes] = await Promise.all([
+    findOrder(id),
+    loadInventory(),
+    apiGet('/show/all/transaction/types')
+  ]);
+  const types = arrayData(allTypes).filter(t => ['Sale', 'Restock', 'Adjustment'].includes(t.Transaction_Type));
+  const variants = inventory.items
+    .filter(v => Number.isSafeInteger(Number(v.variant_id)) && Number(v.variant_id) > 0)
+    .sort((a, b) => String(a.product).localeCompare(String(b.product)) || String(a.size).localeCompare(String(b.size)) || String(a.color).localeCompare(String(b.color)));
+  return { order, types, variants };
 }
 
 // GET: Display the Edit Order page.
+// Any signed-in employee can correct an order (wrong item, quantity, type or date); only managers can delete one.
 app.get('/orders/:id/edit', signedIn, async (req, res) => {
   try {
-    const order = await findOrder(req.params.id);
+    const { order, types, variants } = await loadOrderForm(req.params.id);
 
     if (!order) {
       return errorPage(
@@ -625,7 +1094,7 @@ app.get('/orders/:id/edit', signedIn, async (req, res) => {
       );
     }
 
-    return page(req, res, 'edit-order', { order });
+    return page(req, res, 'edit-order', { order, types, variants, today: localToday() });
 
   } catch (err) {
     return errorPage(
@@ -642,65 +1111,52 @@ app.post('/orders/:id/edit', signedIn, async (req, res) => {
     `/orders/${encodeURIComponent(req.params.id)}/edit`;
 
   try {
-    const rawQuantity = String(
-      req.body.Quantity_Change ?? ''
-    ).trim();
+    const rawQuantity = String(req.body.Quantity_Change ?? '').trim();
+    const typeId = String(req.body.Transaction_Type_ID ?? '').trim();
+    const variantId = String(req.body.Variant_ID ?? '').trim();
+    const orderDate = String(req.body.Date ?? '').trim();
 
     // Quantity must be a nonzero whole number.
     if (!/^-?\d+$/.test(rawQuantity) ||
         !Number.isSafeInteger(Number(rawQuantity)) ||
         Number(rawQuantity) === 0) {
-
-      return flashAndRedirect(
-        req, res,
-        'Enter a valid nonzero whole-number quantity.',
-        back
-      );
+      return flashAndRedirect(req, res, 'Enter a valid nonzero whole-number quantity.', back);
+    }
+    if (!/^[1-9]\d*$/.test(typeId) || !/^[1-9]\d*$/.test(variantId)) {
+      return flashAndRedirect(req, res, 'Choose a transaction type and an item.', back);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(orderDate) || Number.isNaN(Date.parse(orderDate)) || orderDate > localToday()) {
+      return flashAndRedirect(req, res, 'Enter a valid date that is not in the future.', back);
     }
 
     const quantity = Number(rawQuantity);
-    const order = await findOrder(req.params.id);
+    const { order, types } = await loadOrderForm(req.params.id);
 
     if (!order) {
-      return errorPage(
-        req, res, 404,
-        'Order not found',
-        'The selected order could not be found.'
-      );
+      return errorPage(req, res, 404, 'Order not found', 'The selected order could not be found.');
     }
 
-    const type = String(
-      order.transaction_type || ''
-    ).toLowerCase();
+    const selected = types.find(t => String(t.Transaction_Type_ID) === typeId);
+    if (!selected) return flashAndRedirect(req, res, 'Choose Sale, Restock or Adjustment.', back);
 
-    // Sales reduce inventory. Restocks increase it.
-    if ((type.includes('sale') && quantity >= 0) ||
-        (type === 'restock' && quantity <= 0)) {
-
-      return flashAndRedirect(
-        req, res,
-        'Sales must be negative and Restocks must be positive.',
-        back
-      );
+    // Sales reduce inventory. Restocks increase it. Adjustments can go either way.
+    const type = selected.Transaction_Type;
+    if ((type === 'Sale' && quantity >= 0) || (type === 'Restock' && quantity <= 0)) {
+      return flashAndRedirect(req, res, 'Sales must be negative and Restocks must be positive.', back);
     }
 
     const result = await apiPut('/update/invoice', {
       Invoice_ID: req.params.id,
+      Transaction_Type_ID: Number(typeId),
+      Variant_ID: Number(variantId),
+      Date: orderDate,
       Quantity_Change: quantity
     });
 
-    return flashAndRedirect(
-      req, res,
-      result?.message || 'Order updated successfully.',
-      '/orders'
-    );
+    return flashAndRedirect(req, res, result?.message || 'Order updated successfully.', '/orders');
 
   } catch (err) {
-    return flashAndRedirect(
-      req, res,
-      apiError(err, 'Unable to update order.'),
-      back
-    );
+    return flashAndRedirect(req, res, apiError(err, 'Unable to update order.'), back);
   }
 });
 
@@ -754,9 +1210,43 @@ app.get('/employees', pageAccess, async (req, res) => {
     });
   }
 });
-app.get('/settings', pageAccess, (req, res) => page(req, res, 'settings', {
-  message: req.session.user?.id ? res.locals.message : 'Sign in to see your real account details.'
-}));
+// SETTINGS: your account, log out, change your own password, and (managers) the low stock threshold.
+app.get('/settings', pageAccess, async (req, res) => {
+  if (!req.session.user?.id) {
+    return page(req, res, 'settings', { message: 'Sign in to see your real account details.', storeSettings: null });
+  }
+  let storeSettings = null;
+  if (String(req.session.user.role).toLowerCase() === 'manager') {
+    try { storeSettings = await apiGet('/settings/store'); } catch (_) { storeSettings = null; }
+  }
+  return page(req, res, 'settings', { storeSettings });
+});
+app.post('/settings/password', signedIn, async (req, res) => {
+  const current = String(req.body.Current_Password ?? '');
+  const next = String(req.body.New_Password ?? '');
+  const confirmation = String(req.body.Confirm_Password ?? '');
+  if (!current || !next) return flashAndRedirect(req, res, 'Enter your current password and a new password.', '/settings');
+  if (next.length < 8 || next.length > 128) return flashAndRedirect(req, res, 'The new password must be between 8 and 128 characters.', '/settings');
+  if (next !== confirmation) return flashAndRedirect(req, res, 'The new passwords do not match.', '/settings');
+  try {
+    const result = await apiPost('/change/password', { Current_Password: current, New_Password: next });
+    return flashAndRedirect(req, res, result?.message || 'Your password was changed.', '/settings');
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, 'Unable to change your password.'), '/settings');
+  }
+});
+app.post('/settings/store', managerOnly, async (req, res) => {
+  const value = String(req.body.Low_Stock_Threshold ?? '').trim();
+  if (!/^\d+$/.test(value) || Number(value) > 1000) {
+    return flashAndRedirect(req, res, 'Enter a low stock threshold between 0 and 1000.', '/settings');
+  }
+  try {
+    const result = await apiPut('/settings/store', { low_stock_threshold: Number(value) });
+    return flashAndRedirect(req, res, result?.message || 'Store settings saved.', '/settings');
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, 'Unable to save store settings.'), '/settings');
+  }
+});
 
 
 async function findEmployee(id) {
@@ -1047,12 +1537,20 @@ app.get('/manage', managerOnly, async (req, res) => {
       apiGet('/show/all/sizes')
     ]);
 
+    // Variants aren't listed here any more (they're managed on Inventory); they're only counted per product.
+    const variantCounts = {};
+    for (const v of arrayData(variants)) variantCounts[v.Product_ID] = (variantCounts[v.Product_ID] || 0) + 1;
+    // ?rename=colors-3 opens that color or size as a rename box (chosen from its ⋯ menu).
+    const renaming = /^(colors|sizes)-[1-9]\d*$/.test(String(req.query.rename || '')) ? String(req.query.rename) : null;
+
     return page(req, res, 'manage', {
-      suppliers,
-      categories,
-      locations,
-      products,
-      variants,
+      suppliers: arrayData(suppliers),
+      categories: arrayData(categories),
+      locations: arrayData(locations),
+      products: arrayData(products),
+      variantCounts,
+      renaming,
+      recent: recentIds(req),
       colors: arrayData(colors),
       sizes: arrayData(sizes)
     });
@@ -1100,8 +1598,8 @@ app.post('/manage/add/:kind', managerOnly, async (req, res) => {
   if (!config) {
     return errorPage(
       req, res, 404,
-      'Invalid catalogue type',
-      'This type of catalogue record cannot be added.'
+      'Invalid catalog type',
+      'This type of catalog record cannot be added.'
     );
   }
 
@@ -1120,16 +1618,17 @@ app.post('/manage/add/:kind', managerOnly, async (req, res) => {
 
   try {
     const result = await apiPost(config.endpoint, payload);
+    markRecent(req, `catalog-${req.params.kind}`, payload[config.required].toLowerCase());
 
     return flashAndRedirect(
       req, res,
-      result?.message || 'Catalogue record added.',
-      '/manage'
+      result?.message || 'Catalog record added.',
+      `/manage#${req.params.kind}`
     );
   } catch (err) {
     return flashAndRedirect(
       req, res,
-      apiError(err, 'Unable to add catalogue record.'),
+      apiError(err, 'Unable to add catalog record.'),
       '/manage'
     );
   }
@@ -1150,13 +1649,32 @@ const catalogRenames = {
   }
 };
 
+// DELETE COLORS AND SIZES (managers). The API refuses one that a product variant still uses.
+const catalogDeletes = {
+  colors: { endpoint: '/delete/color', idField: 'Color_ID', label: 'Color' },
+  sizes: { endpoint: '/delete/size', idField: 'Size_ID', label: 'Size' }
+};
+app.post('/manage/delete/:kind/:id', managerOnly, async (req, res) => {
+  const config = catalogDeletes[req.params.kind];
+  const id = Number(req.params.id);
+  if (!config || !Number.isSafeInteger(id) || id <= 0) {
+    return flashAndRedirect(req, res, 'Only colors and sizes can be deleted here.', '/manage');
+  }
+  try {
+    const result = await apiRequest('DELETE', config.endpoint, { body: { [config.idField]: id } });
+    return flashAndRedirect(req, res, result?.message || `${config.label} deleted.`, `/manage#${req.params.kind}`);
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, `Unable to delete the ${config.label.toLowerCase()}.`), `/manage#${req.params.kind}`);
+  }
+});
+
 app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
   const config = catalogRenames[req.params.kind];
 
   if (!config) {
     return errorPage(
       req, res, 404,
-      'Invalid catalogue type',
+      'Invalid catalog type',
       'Only Colors and Sizes can be renamed here.'
     );
   }
@@ -1183,25 +1701,29 @@ app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
 
     return flashAndRedirect(
       req, res,
-      result?.message || 'Catalogue record updated.',
+      result?.message || 'Catalog record updated.',
       '/manage'
     );
   } catch (err) {
     return flashAndRedirect(
       req, res,
-      apiError(err, 'Unable to rename catalogue record.'),
+      apiError(err, 'Unable to rename catalog record.'),
       '/manage'
     );
   }
 });
 
+// ADD VARIANTS: pick sizes and colors, then check each size/color combination the product comes in.
+// Every checked row has its own starting stock, location, price and cost, unless "same for all" is ticked.
+// Combinations the product already has are shown as "Already exists" and can't be added twice.
 app.get('/products/:id/variants/new', managerOnly, async (req, res) => {
   try {
-    const [products, sizes, colors, locations] = await Promise.all([
+    const [products, sizes, colors, locations, variants] = await Promise.all([
       apiGet('/api/products'),
       apiGet('/show/all/sizes'),
       apiGet('/show/all/colors'),
-      apiGet('/api/locations')
+      apiGet('/api/locations'),
+      apiGet('/api/product_variants')
     ]);
 
     const product = arrayData(products).find(
@@ -1215,11 +1737,16 @@ app.get('/products/:id/variants/new', managerOnly, async (req, res) => {
       );
     }
 
+    const existing = arrayData(variants)
+      .filter(v => String(v.Product_ID) === String(product.Product_ID))
+      .map(v => `${v.Size_ID}-${v.Color_ID}`);
+
     return page(req, res, 'newvariant', {
       product,
       sizes: arrayData(sizes),
       colors: arrayData(colors),
-      locations: arrayData(locations)
+      locations: arrayData(locations),
+      existing
     });
   } catch (err) {
     return errorPage(
@@ -1231,88 +1758,92 @@ app.get('/products/:id/variants/new', managerOnly, async (req, res) => {
 
 
 app.post('/products/:id/variants', managerOnly, async (req, res) => {
-  const productId = Number(req.params.id);
-  const sizeId = Number(req.body.Size_ID);
-  const colorId = Number(req.body.Color_ID);
-  const locationId = String(req.body.Location_ID || '').trim();
-  const priceText = String(req.body.Price ?? '');
-  const costText = String(req.body.Cost ?? '');
-  const quantityText = String(req.body.Quantity ?? '');
+  const back = `/products/${encodeURIComponent(req.params.id)}/variants/new`;
+  const validId = x => /^[1-9]\d*$/.test(String(x)) && Number.isSafeInteger(Number(x));
+  const validMoney = x => /^(0|[1-9]\d{0,7})(\.\d{1,2})?$/.test(String(x).replace(/^\$/, '').trim());
+  const money = x => Number(String(x).replace(/^\$/, '').trim());
+  const productId = req.params.id;
+  if (!validId(productId)) return flashAndRedirect(req, res, 'Choose a valid product.', '/manage');
 
-  const validId = x =>
-    /^[1-9]\d*$/.test(String(x)) &&
-    Number.isSafeInteger(Number(x));
-
-  const validMoney = x =>
-    /^(0|[1-9]\d{0,7})(\.\d{1,2})?$/.test(x);
-
-  if (!validId(productId) || !validId(sizeId) ||
-      !validId(colorId) || !validId(locationId) ||
-      !validMoney(priceText) || !validMoney(costText) ||
-      !/^\d+$/.test(quantityText) ||
-      !Number.isSafeInteger(Number(quantityText))) {
-    return flashAndRedirect(
-      req, res, 'Enter valid variant and stock details.',
-      `/products/${encodeURIComponent(req.params.id)}/variants/new`
-    );
+  const combos = [].concat(req.body.combo || []).map(String).filter(c => /^[1-9]\d*-[1-9]\d*$/.test(c));
+  if (!combos.length) {
+    return flashAndRedirect(req, res, 'Check at least one size and color combination to add.', back);
   }
 
-  let variantId = null;
+  const sameLocation = req.body.same_location === '1';
+  const samePrice = req.body.same_price === '1';
+  const planned = [];
+  const problems = [];
+  for (const combo of [...new Set(combos)]) {
+    const [sizeId, colorId] = combo.split('-');
+    const key = `${sizeId}_${colorId}`;
+    const label = String(req.body[`label_${key}`] || combo).slice(0, 60);
+    const stock = String(req.body[`stock_${key}`] ?? '0').trim() || '0';
+    const location = String(sameLocation ? req.body.Location_ID : req.body[`location_${key}`] ?? '').trim();
+    const price = String(samePrice ? req.body.Price : req.body[`price_${key}`] ?? '').trim();
+    const cost = String(samePrice ? req.body.Cost : req.body[`cost_${key}`] ?? '').trim();
+    if (!/^\d+$/.test(stock) || !Number.isSafeInteger(Number(stock))) problems.push(`${label}: starting stock must be a whole number`);
+    else if (!validId(location)) problems.push(`${label}: choose a location`);
+    else if (!validMoney(price) || !validMoney(cost)) problems.push(`${label}: enter a price and cost like 32.00`);
+    else planned.push({ sizeId: Number(sizeId), colorId: Number(colorId), label, stock: Number(stock),
+      location: Number(location), price: money(price), cost: money(cost) });
+  }
+  if (problems.length) {
+    return flashAndRedirect(req, res, `Nothing was added. ${problems.slice(0, 3).join('; ')}${problems.length > 3 ? '; …' : ''}.`, back);
+  }
 
+  // Check again for combinations that already exist, in case someone added one in the meantime.
+  let existing;
   try {
-    const created = await apiPost('/api/product_variants', {
-      Product_ID: productId,
-      Size_ID: sizeId,
-      Color_ID: colorId,
-      Location_ID: locationId,
-      Price: Number(priceText),
-      Cost: Number(costText)
-    });
-
-    variantId = Number(created.Variant_ID);
-
-    if (!validId(variantId)) {
-      return flashAndRedirect(
-        req, res,
-        'Variant creation returned no valid ID. Check Manage Catalogue.',
-        '/manage'
-      );
-    }
-
-    await apiPost('/api/inventory', {
-      Variant_ID: variantId,
-      Quantity: 0
-    });
-
-    const startingQuantity = Number(quantityText);
-
-    if (startingQuantity > 0) {
-      await apiPut('/adjust/inventory', {
-        Variant_ID: variantId,
-        New_Quantity: startingQuantity
-      });
-    }
-
-    return flashAndRedirect(
-      req, res, 'Product variant and stock created.',
-      '/inventory'
-    );
+    existing = new Set(arrayData(await apiGet('/api/product_variants'))
+      .filter(v => String(v.Product_ID) === String(productId))
+      .map(v => `${v.Size_ID}-${v.Color_ID}`));
   } catch (err) {
-    const message = variantId
-      ? `Variant #${variantId} was created, but inventory setup may be incomplete. Check the records before retrying.`
-      : apiError(err, 'Unable to create the variant.');
-
-    return flashAndRedirect(
-      req, res, message,
-      variantId
-        ? '/manage'
-        : `/products/${encodeURIComponent(req.params.id)}/variants/new`
-    );
+    return flashAndRedirect(req, res, apiError(err, 'Unable to check the existing variants.'), back);
   }
+  const duplicates = planned.filter(p => existing.has(`${p.sizeId}-${p.colorId}`));
+  if (duplicates.length) {
+    return flashAndRedirect(req, res,
+      `Nothing was added: ${duplicates.map(d => d.label).join(', ')} already ${duplicates.length === 1 ? 'exists' : 'exist'}.`, back);
+  }
+
+  const added = [];
+  for (const item of planned) {
+    let variantId = null;
+    try {
+      const created = await apiPost('/api/product_variants', {
+        Product_ID: Number(productId),
+        Size_ID: item.sizeId,
+        Color_ID: item.colorId,
+        Location_ID: item.location,
+        Price: item.price,
+        Cost: item.cost
+      });
+      variantId = Number(created?.Variant_ID);
+      if (!validId(variantId)) throw new ApiError('Variant creation returned no valid ID.', 502, null);
+      await apiPost('/api/inventory', { Variant_ID: variantId, Quantity: 0 });
+      if (item.stock > 0) {
+        await apiPut('/adjust/inventory', { Variant_ID: variantId, New_Quantity: item.stock });
+      }
+      added.push(item.label);
+      markRecent(req, 'variants', variantId);
+    } catch (err) {
+      const done = added.length ? `Added ${added.join(', ')}. ` : '';
+      const failed = variantId
+        ? `${item.label} was created, but its stock may not be set. Check it on Inventory.`
+        : `${item.label} could not be added: ${apiError(err, 'the API rejected it.')}`;
+      return flashAndRedirect(req, res, `${done}${failed} Anything after it was not added.`, variantId || added.length ? `/inventory#p${productId}` : back);
+    }
+  }
+
+  markRecent(req, 'products', productId);
+  return flashAndRedirect(req, res,
+    `Added ${added.length} ${added.length === 1 ? 'variant' : 'variants'}: ${added.join(', ')}.`,
+    `/inventory#p${productId}`);
 });
 
 
-// MANAGER: create a catalogue product using the existing Flask product API.
+// MANAGER: create a catalog product using the existing Flask product API.
 // A product needs a category and supplier; variants/stock are managed separately.
 app.get('/new/product', managerOnly, async (req, res) => {
   try {
@@ -1355,11 +1886,12 @@ const productId = Number(created.Product_ID);
 if (!Number.isSafeInteger(productId) || productId <= 0) {
   return flashAndRedirect(
     req, res,
-    'Product created, but no ID was returned. Check Manage Catalogue.',
+    'Product created, but no ID was returned. Check Manage catalog.',
     '/manage'
   );
 }
 
+markRecent(req, 'products', productId);
 return flashAndRedirect(
   req, res,
   `Product "${name}" created. Add its size/color variant next.`,
@@ -1382,7 +1914,7 @@ app.post('/create/employee', managerOnly, async (req, res) => {
       Email: req.body.Email,
       Password: req.body.Password
     });
-    return flashAndRedirect(req, res, reply?.message || 'Employee created.', '/new/employee');
+    return flashAndRedirect(req, res, reply?.message || 'Employee created.', '/employees');
   } catch (err) {
   return page(req, res, 'newemployee', {
     message: apiError(err, 'Unable to create employee.'),
@@ -1429,7 +1961,9 @@ const editPages = [
 
 for (const config of editPages) {
   const label = config.key.charAt(0).toUpperCase() + config.key.slice(1);
-  app.get(`/${config.kind}/:id/edit`, signedIn, async (req, res) => {
+  // Editing the catalog (products, variants, suppliers, categories, locations) is manager-only, like adding
+  // and deleting: these pages show cost and change what the whole store sells.
+  app.get(`/${config.kind}/:id/edit`, managerOnly, async (req, res) => {
     try {
       const results = await Promise.all(config.list.map(apiGetEndpoint => apiGet(apiGetEndpoint)));
       const values = {};
@@ -1443,7 +1977,7 @@ for (const config of editPages) {
     }
   });
 
-  app.post(`/${config.kind}/:id/edit`, signedIn, async (req, res) => {
+  app.post(`/${config.kind}/:id/edit`, managerOnly, async (req, res) => {
     const updated = {};
     for (const key of config.fields) {
       if (req.body[key] !== undefined) updated[key] = req.body[key] === '' ? null : req.body[key];
@@ -1459,9 +1993,10 @@ for (const config of editPages) {
   app.post(`/${config.kind}/:id/delete`, managerOnly, async (req, res) => {
     try {
       await apiDelete(`${config.put}/${encodeURIComponent(req.params.id)}`);
-      return flashAndRedirect(req, res, `${label} deleted.`, '/manage');
+      // Variants are managed on Inventory now; everything else is on Manage catalog.
+      return flashAndRedirect(req, res, `${label} deleted.`, config.kind === 'variants' ? '/inventory' : '/manage');
     } catch (err) {
-      const destination = config.kind === 'products'
+      const destination = config.kind === 'products' || config.kind === 'variants'
         ? `/${config.kind}/${encodeURIComponent(req.params.id)}/edit` : '/manage';
       return flashAndRedirect(req, res, apiError(err, `Unable to delete ${config.key}.`), destination);
     }

@@ -6,23 +6,36 @@
 
 <body>
 <div class="app">
-<%- include('../template/nav', { active: 'none' }) %>
+<%- include('../template/nav', { active: 'inventory' }) %>
 <main class="content">
 <%- include('../template/topbar') %>
 <%- include('../template/messages') %>
+<%
+  // Name the variant ("Satin Midi Dress – M / Black") instead of showing its database number.
+  const findName = (list, idKey, id, nameKey) => {
+    const match = (Array.isArray(list) ? list : []).find(x => String(x[idKey]) === String(id));
+    return match ? match[nameKey] : '';
+  };
+  const variantProduct = findName(typeof products !== 'undefined' ? products : [], 'Product_ID', variant.Product_ID, 'Name') || 'Variant';
+  const variantSize = findName(typeof sizes !== 'undefined' ? sizes : [], 'Size_ID', variant.Size_ID, 'Size');
+  const variantColor = findName(typeof colors !== 'undefined' ? colors : [], 'Color_ID', variant.Color_ID, 'Color');
+  const variantName = variantProduct + ((variantSize || variantColor) ? ' – ' + [variantSize, variantColor].filter(Boolean).join(' / ') : '');
+%>
+<a href="/inventory#v<%= variant.Variant_ID %>" class="back-link">← Back to Inventory</a>
 <header class="page-header">
-<h1>Edit variant #<%= variant.Variant_ID %></h1>
+<p class="eyebrow">Edit variant</p>
+<h1><%= variantName %></h1>
 </header>
 <section class="panel form-panel">
 
 <form action="/variants/<%= variant.Variant_ID %>/edit" method="POST"
-data-confirm="Save changes to variant #<%= variant.Variant_ID %>?"
+data-confirm="Save changes to <%= variantName %>?"
 data-confirm-button="Save changes">
 <div class="mb-3">
 <label for="Product_ID" class="form-label">Product</label>
 <select class="form-select" id="Product_ID" name="Product_ID" required>
 <% products.forEach(function(p) { %>
-<option value="<%= p.Product_ID %>" <%= p.Product_ID == variant.Product_ID ? 'selected' : '' %>><%= p.Name %></option>
+<option value="<%= p.Product_ID %>" class="<%= isNew('products', p.Product_ID) ? 'opt-new' : '' %>" <%= p.Product_ID == variant.Product_ID ? 'selected' : '' %>><%= newLabel('products', p.Product_ID, p.Name) %></option>
 <% }); %>
 </select>
 </div>
@@ -31,7 +44,7 @@ data-confirm-button="Save changes">
 <label for="Size_ID" class="form-label">Size</label>
 <select class="form-select" id="Size_ID" name="Size_ID" required>
 <% sizes.forEach(function(s) { %>
-<option value="<%= s.Size_ID %>" <%= s.Size_ID == variant.Size_ID ? 'selected' : '' %>><%= s.Size %></option>
+<option value="<%= s.Size_ID %>" class="<%= isNew('sizes', s.Size) ? 'opt-new' : '' %>" <%= s.Size_ID == variant.Size_ID ? 'selected' : '' %>><%= newLabel('sizes', s.Size, s.Size) %></option>
 <% }); %>
 </select>
 </div>
@@ -40,7 +53,7 @@ data-confirm-button="Save changes">
 <label for="Color_ID" class="form-label">Color</label>
 <select class="form-select" id="Color_ID" name="Color_ID" required>
 <% colors.forEach(function(c) { %>
-<option value="<%= c.Color_ID %>" <%= c.Color_ID == variant.Color_ID ? 'selected' : '' %>><%= c.Color %></option>
+<option value="<%= c.Color_ID %>" class="<%= isNew('colors', c.Color) ? 'opt-new' : '' %>" <%= c.Color_ID == variant.Color_ID ? 'selected' : '' %>><%= newLabel('colors', c.Color, c.Color) %></option>
 <% }); %>
 </select>
 </div>
@@ -49,7 +62,7 @@ data-confirm-button="Save changes">
 <label for="Location_ID" class="form-label">Location</label>
 <select class="form-select" id="Location_ID" name="Location_ID" required>
 <% locations.forEach(function(l) { %>
-<option value="<%= l.Location_ID %>" <%= l.Location_ID == variant.Location_ID ? 'selected' : '' %>><%= l.Location_Name %></option>
+<option value="<%= l.Location_ID %>" class="<%= isNew('locations', l.Location_Name) ? 'opt-new' : '' %>" <%= l.Location_ID == variant.Location_ID ? 'selected' : '' %>><%= newLabel('locations', l.Location_Name, l.Location_Name) %></option>
 <% }); %>
 </select>
 </div>
@@ -67,14 +80,14 @@ value="<%= variant.Cost %>" step="0.01" min="0" required>
 </div>
 
 <button type="submit" class="btn btn-primary">Save changes</button>
-<a href="/" class="btn btn-outline-secondary">Cancel</a>
+<a href="/inventory#v<%= variant.Variant_ID %>" class="btn btn-outline-secondary">Cancel</a>
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 </form>
 
 <hr class="my-4">
 <form action="/variants/<%= variant.Variant_ID %>/delete" method="POST"
-data-confirm="Delete variant #<%= variant.Variant_ID %>? This can't be undone."
-data-confirm-button="Delete">
+data-confirm="Delete <%= variantName %>? This can't be undone."
+data-confirm-button="Delete variant" data-confirm-style="danger">
 <button type="submit" class="btn btn-outline-danger">Delete variant</button>
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 </form>

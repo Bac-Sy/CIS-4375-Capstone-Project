@@ -1,3 +1,17 @@
+<%
+  // Best sellers: products (or sizes and colors) ranked by units sold, with the first and last day each sold.
+  const isCustom = typeof custom !== 'undefined' && custom;
+  const rangeFrom = typeof from !== 'undefined' ? from : '';
+  const rangeTo = typeof to !== 'undefined' ? to : '';
+  const periodLabel = isCustom ? fmt.date(rangeFrom) + ' – ' + fmt.date(rangeTo) : ((periods.find(p => p.days === days) || {}).label || '');
+  const periodQuery = isCustom ? 'from=' + rangeFrom + '&to=' + rangeTo : 'days=' + days;
+  // each row links to the Sales report for that product over the same dates
+  const salesLink = r => {
+    const start = isCustom ? rangeFrom : (typeof salesFrom !== 'undefined' && salesFrom) ? salesFrom : (r.First_Sold || '');
+    const end = isCustom ? rangeTo : (typeof salesTo !== 'undefined' ? salesTo : '');
+    return '/reports/sales?from=' + start + '&to=' + end + '&product=' + r.Product_ID;
+  };
+%>
 <!doctype html>
 <html lang="en">
     <head>
@@ -12,25 +26,39 @@
                 <%- include('../template/topbar'); %>
                 <%- include('../template/messages'); %>
 
-                <header class="page-header">
-                  <h1>Best sellers</h1>
-                </header>
+                <%- include('../template/reportbar', { reportKey: 'best', reportTitle: 'Best sellers',
+                     reportSubtitle: periodLabel + (view === 'item' ? ' · by size and color' : ' · by product'),
+                     exportHref: '/reports/best-sellers?' + periodQuery + '&view=' + view }); %>
 
-                <!-- Time period. Keeps the current view (product or item) when switching. -->
-                <nav class="tabs" aria-label="Report period">
-                  <% periods.forEach(p => { %>
-                    <a href="/reports/best-sellers?days=<%= p.days %>&view=<%= view %>" class="<%= days === p.days ? 'active' : '' %>"<% if (days === p.days) { %> aria-current="page"<% } %>><%= p.label %></a>
-                  <% }) %>
-                </nav>
-
-                <!-- By product adds all sizes and colors together. By item lists each size and color separately. -->
-                <nav class="tabs" aria-label="Group by">
-                  <a href="/reports/best-sellers?days=<%= days %>&view=product" class="<%= view === 'product' ? 'active' : '' %>"<% if (view === 'product') { %> aria-current="page"<% } %>>By product</a>
-                  <a href="/reports/best-sellers?days=<%= days %>&view=item" class="<%= view === 'item' ? 'active' : '' %>"<% if (view === 'item') { %> aria-current="page"<% } %>>By size and color</a>
-                </nav>
+                <!-- Filters for this report (the tabs above switch reports) -->
+                <section class="filter-bar no-print" aria-label="Filter this report">
+                  <div class="filter-group">
+                    <span class="filter-label">Period</span>
+                    <nav class="pills" aria-label="Report period">
+                      <% periods.forEach(p => { %>
+                        <a href="/reports/best-sellers?days=<%= p.days %>&view=<%= view %>" class="<%= !isCustom && days === p.days ? 'active' : '' %>"<% if (!isCustom && days === p.days) { %> aria-current="page"<% } %>><%= p.label %></a>
+                      <% }) %>
+                    </nav>
+                    <form class="filter-dates" method="GET" action="/reports/best-sellers">
+                      <input type="hidden" name="view" value="<%= view %>">
+                      <label for="bsFrom">From</label>
+                      <input type="date" id="bsFrom" name="from" class="form-control form-control-sm" value="<%= rangeFrom %>" required>
+                      <label for="bsTo">To</label>
+                      <input type="date" id="bsTo" name="to" class="form-control form-control-sm" value="<%= rangeTo %>" required>
+                      <button type="submit" class="btn btn-sm <%= isCustom ? 'btn-primary' : 'btn-outline-secondary' %>">Show</button>
+                    </form>
+                  </div>
+                  <div class="filter-group">
+                    <span class="filter-label">Group by</span>
+                    <nav class="pills" aria-label="Group by">
+                      <a href="/reports/best-sellers?<%= periodQuery %>&view=product" class="<%= view === 'product' ? 'active' : '' %>"<% if (view === 'product') { %> aria-current="page"<% } %>>Product</a>
+                      <a href="/reports/best-sellers?<%= periodQuery %>&view=item" class="<%= view === 'item' ? 'active' : '' %>"<% if (view === 'item') { %> aria-current="page"<% } %>>Size and color</a>
+                    </nav>
+                  </div>
+                </section>
 
                 <% const rows = view === 'item' ? byItem : byProduct; %>
-                <% const cols = view === 'item' ? 7 : 6; %>
+                <% const cols = view === 'item' ? 9 : 8; %>
                 <section class="panel">
                   <div class="panel-bar">
                     <%= fmt.number(totalUnits) %> <%= totalUnits === 1 ? 'unit' : 'units' %> sold, <%= fmt.money(totalRevenue) %> in sales
@@ -49,8 +77,10 @@
                             <th scope="col">Category</th>
                           <% } %>
                           <th scope="col" class="num">Units sold</th>
-                          <th scope="col" class="num">Sales</th>
-                          <th scope="col" class="num">Share of units</th>
+                          <th scope="col" class="num">Total sales</th>
+                          <th scope="col" class="num">Share of units sold</th>
+                          <th scope="col">First sold</th>
+                          <th scope="col">Last sold</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -62,7 +92,11 @@
                         <% rows.forEach(r => { %>
                           <tr>
                             <td class="num"><%= r.Units_Sold > 0 ? '#' + r.Rank : '–' %></td>
-                            <td><strong><%= r.Product %></strong></td>
+                            <td>
+                              <% if (r.Units_Sold > 0 && r.Product_ID) { %>
+                                <a class="row-link" href="<%= salesLink(r) %>" title="See each sale of <%= r.Product %>"><strong><%= r.Product %></strong></a>
+                              <% } else { %><strong><%= r.Product %></strong><% } %>
+                            </td>
                             <% if (view === 'item') { %>
                               <td><%= r.Size %></td>
                               <td><%= r.Color %></td>
@@ -72,13 +106,15 @@
                             <td class="num"><%= fmt.number(r.Units_Sold) %></td>
                             <td class="num"><%= fmt.money(r.Revenue) %></td>
                             <td class="num"><%= totalUnits > 0 ? Math.round(r.Units_Sold / totalUnits * 100) + '%' : '0%' %></td>
+                            <td><%= r.First_Sold ? fmt.date(r.First_Sold) : '–' %></td>
+                            <td><%= r.Last_Sold ? fmt.date(r.Last_Sold) : '–' %></td>
                           </tr>
                         <% }) %>
                       </tbody>
                     </table>
                   </div>
                 </section>
-                <p class="empty">Counts Sale invoices only. Sales are valued at each item's current price. Items with no sales in this period are listed at the bottom.</p>
+                <p class="empty report-note">Counts sales only (not restocks or adjustments). Total sales = units sold × each item's current price. First sold and last sold are the first and last day it sold in this period; click a product to see each of its sales. Items with no sales in this period are listed at the bottom, without a rank.</p>
 
                 <%- include('../template/footer'); %>
             </main>

@@ -12,6 +12,7 @@ from argon2 import PasswordHasher, exceptions
 from datetime import date
 from security import auth_secret, issue_token, install_auth, forget_employee
 from reporting import register_reporting_routes
+from history import register_history
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -68,7 +69,9 @@ def db_error_response(mycon, error):
     mycon.close()
     code = getattr(error, 'errno', None)
     if code == 1062:
-        return jsonify({"message": "That already exists. Try a different name."}), 409
+        return jsonify({"message": "That already exists (the same name or email is already saved). Try a different one."}), 409
+    if code == 1451:
+        return jsonify({"message": "This is still used by other records (for example products or variants), so it can't be deleted."}), 409
     if code == 1452:
         return jsonify({"message": "One of the linked records (like the size, color, product or location) doesn't exist."}), 404
     return jsonify({"message": "The database rejected this change."}), 400
@@ -95,7 +98,8 @@ def add_supplier():
     data = request.json
     mycon = get_connection()
     query = "INSERT INTO Supplier (Name, Email, Phone) VALUES (%s, %s, %s)"
-    params = (data['Name'], data['Email'], data['Phone'])
+    #Email is UNIQUE, so a blank email is saved as NULL (several suppliers can have none) instead of ''
+    params = (data['Name'], (data.get('Email') or '').strip() or None, (data.get('Phone') or '').strip() or None)
     error = run_write(mycon, query, params)
     if error:
         return db_error_response(mycon, error)
@@ -110,7 +114,7 @@ def update_supplier(supplier_id):
         mycon.close()
         return jsonify({"message": "Supplier not found."}), 404
     query = "UPDATE Supplier SET Name=%s, Email=%s, Phone=%s WHERE Supplier_ID=%s"
-    params = (data['Name'], data['Email'], data['Phone'], supplier_id)
+    params = (data['Name'], (data.get('Email') or '').strip() or None, (data.get('Phone') or '').strip() or None, supplier_id)
     error = run_write(mycon, query, params)
     if error:
         return db_error_response(mycon, error)
@@ -211,8 +215,8 @@ def employeeInformation():
     mycon = get_connection()
     userinput = request.get_json()
     email = userinput['Email']
-    sql = "select First_Name, Last_Name, Role, Username, Email from Employee where Email = '%s'" % (email)
-    employeeInformation = execute_read_query(mycon,sql)
+    sql = "select First_Name, Last_Name, Role, Username, Email from Employee where Email = %s"
+    employeeInformation = execute_read_query(mycon, sql, (email,))
     mycon.close()
     if (employeeInformation):
         return jsonify (employeeInformation)
@@ -267,30 +271,30 @@ def updateEmployee():
     password= userinput.get('Password')
 
     if firstName:
-        sql = "update Employee set First_Name = '%s' where Email =  '%s' " % (firstName,currentEmail)
-        execute_update_query(mycon,sql)
+        sql = "update Employee set First_Name = %s where Email =  %s "
+        execute_update_query(mycon, sql, (firstName,currentEmail))
        
     if lastName:
-        sql ="update Employee set Last_Name  = '%s' where Email = '%s' " % (lastName, currentEmail)
-        execute_update_query(mycon, sql)
+        sql = "update Employee set Last_Name  = %s where Email = %s "
+        execute_update_query(mycon, sql, (lastName, currentEmail))
        
     if role:
-        sql = "update Employee set Role = '%s' where Email = '%s' " % (role, currentEmail)
-        execute_update_query(mycon,sql)
+        sql = "update Employee set Role = %s where Email = %s "
+        execute_update_query(mycon, sql, (role, currentEmail))
         
     if username:
-        sql = "update Employee set username = '%s' where Email = '%s'" % (username, currentEmail)
-        execute_update_query(mycon, sql)
+        sql = "update Employee set username = %s where Email = %s"
+        execute_update_query(mycon, sql, (username, currentEmail))
         
     if password:
         ph = PasswordHasher()
         hashedPassword = ph.hash(password)
-        sql = "update Employee set Password_Hash = '%s' where Email = '%s'" % (hashedPassword, currentEmail)
-        execute_update_query(mycon, sql)
+        sql = "update Employee set Password_Hash = %s where Email = %s"
+        execute_update_query(mycon, sql, (hashedPassword, currentEmail))
 
     if newEmail:
-            sql = "update Employee set Email = '%s' where Email= '%s'" % (newEmail, currentEmail)
-            execute_update_query(mycon,sql)
+            sql = "update Employee set Email = %s where Email= %s"
+            execute_update_query(mycon, sql, (newEmail, currentEmail))
     
     mycon.close()
     #clears the remembered login info so a role change takes effect right away
@@ -305,22 +309,22 @@ def deleteEmployee():
     email = userinput['Email']
 
     #checks that the employee exists
-    sql = "select Employee_ID from Employee where Email = '%s'" % (email)
-    employee = execute_read_query(mycon,sql)
+    sql = "select Employee_ID from Employee where Email = %s"
+    employee = execute_read_query(mycon, sql, (email,))
     if not employee:
         mycon.close()
         return jsonify({'message' : 'Employee not found. Try a different email.'}), 404
 
     #an employee with invoices can't be deleted because the invoices reference their Employee_ID
     employeeID = employee[0]['Employee_ID']
-    sql1 = "select Invoice_ID from Invoice where Employee_ID = '%s'" % (employeeID)
-    invoices = execute_read_query(mycon,sql1)
+    sql1 = "select Invoice_ID from Invoice where Employee_ID = %s"
+    invoices = execute_read_query(mycon, sql1, (employeeID,))
     if invoices:
         mycon.close()
         return jsonify({'message' : "This employee has invoices and can't be deleted."}), 409
 
-    sql2 = "delete from Employee where Email = '%s' " % (email)
-    execute_update_query(mycon,sql2)
+    sql2 = "delete from Employee where Email = %s "
+    execute_update_query(mycon, sql2, (email,))
     mycon.close()
     #clears the remembered login info so the deleted employee is logged out right away
     forget_employee(employeeID)
@@ -387,6 +391,38 @@ def login():
         }
     }), 200
 
+#Change my password (Settings page). Any signed-in employee can change their OWN password, but only
+#after entering their current one. The account comes from the login token, never from the request body,
+#so nobody can change someone else's password here. Managers reset other people's passwords on Employees.
+@app.route('/change/password', methods=['POST'])
+def changeMyPassword():
+    data = request.get_json(silent=True) or {}
+    currentPassword = str(data.get('Current_Password') or '')
+    newPassword = str(data.get('New_Password') or '')
+    if not currentPassword or not newPassword:
+        return jsonify({'message': 'Enter your current password and a new password.'}), 400
+    if len(newPassword) < 8 or len(newPassword) > 128:
+        return jsonify({'message': 'The new password must be between 8 and 128 characters.'}), 400
+    employeeID = int(g.employee['Employee_ID'])
+    con = get_connection()
+    if con is None:
+        return jsonify({'message': 'Database unavailable.'}), 503
+    try:
+        rows = execute_read_query(con, 'SELECT Password_Hash FROM Employee WHERE Employee_ID=%s', (employeeID,))
+        if not rows:
+            return jsonify({'message': 'Your account could not be found.'}), 404
+        ph = PasswordHasher()
+        try:
+            ph.verify(rows[0]['Password_Hash'], currentPassword)
+        except exceptions.VerificationError:
+            return jsonify({'message': 'Your current password is incorrect.'}), 400
+        error = run_write(con, 'UPDATE Employee SET Password_Hash=%s WHERE Employee_ID=%s', (ph.hash(newPassword), employeeID))
+        if error:
+            return db_error_response(con, error)
+        return jsonify({'message': 'Your password was changed.'}), 200
+    finally:
+        con.close()
+
 #Below is the CRUD for the Invoice table.
 #Read (The api to read a single entry in the Invoice table)
 @app.route('/get/invoice', methods = ['GET'])
@@ -394,8 +430,8 @@ def getInvoice():
     mycon = get_connection()
     userinput = request.get_json()
     invoiceID = userinput['Invoice_ID']
-    sql = "select * from Invoice where Invoice_ID = '%s'" % (invoiceID)
-    invoice = execute_read_query(mycon,sql)
+    sql = "select * from Invoice where Invoice_ID = %s"
+    invoice = execute_read_query(mycon, sql, (invoiceID,))
     mycon.close()
     if invoice:
         return jsonify(invoice)
@@ -412,157 +448,208 @@ def showAllInvoices():
     return jsonify(allInvoices)
 
 #Create (adding a new invoice to the Invoice table.)
+#The invoice and the stock change are saved together in one transaction (or not at all), and the stock row is
+#locked while it's checked, so two sales at the same moment can't both take the last item.
 @app.route('/create/invoice', methods =['POST'])
 def createInvoice():
+    userinput = request.get_json(silent=True) or {}
+    try:
+        transactionTypeID = int(userinput['Transaction_Type_ID'])
+        quantityChange = int(userinput['Quantity_Change']) #Needs to be a positive number for additions and a negative number for removals.
+        variantID = int(userinput['Variant_ID'])
+    except (KeyError, ValueError, TypeError):
+        return jsonify({'message' : 'Transaction_Type_ID, Quantity_Change and Variant_ID are required whole numbers.'}), 400
+    if quantityChange == 0:
+        return jsonify({'message' : 'Quantity_Change cannot be 0.'}), 400
+    #the employee comes from the login token, so an invoice is always recorded under the person who made it.
+    employeeID = int(g.employee['Employee_ID'])
+    supplied = userinput.get('Employee_ID')
+    if supplied is not None and str(supplied) != str(employeeID):
+        return jsonify({'message' : 'Employee_ID must match the signed-in account.'}), 403
+
     mycon = get_connection()
-    userinput = request.get_json()
-    transactionTypeID = userinput['Transaction_Type_ID']
-    quantityChange = int(userinput['Quantity_Change']) #Needs to be a positive number for additions and a negative number for removals. 
-    variantID = userinput['Variant_ID']
-    employeeID = userinput['Employee_ID'] #the employee ID gets filled in from the session store. the user does not have to manually input this.
-
-    #these get used below to verify that these IDs exist in the system. If they do not, then the call fails. 
-    sql = "select Variant_ID from Product_Variant where Variant_ID ='%s' " % (variantID)
-    sql1 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type_ID = '%s' " % (transactionTypeID)
-    sql2= "select Employee_ID from Employee where Employee_ID = '%s'" % (employeeID)
-
-    variant = execute_read_query(mycon,sql)
-    transaction = execute_read_query(mycon, sql1)
-    employee = execute_read_query(mycon,sql2)
-
-    if not variant:
+    if mycon is None:
+        return jsonify({'message' : 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = mycon.cursor(dictionary=True)
+        #these verify that the IDs exist in the system. If they do not, then the call fails.
+        cursor.execute("select Transaction_Type from Transaction_Type where Transaction_Type_ID = %s", (transactionTypeID,))
+        transaction = cursor.fetchone()
+        if transaction is None:
+            mycon.rollback()
+            return jsonify({'message' : 'Transaction type does not exist. Try a different transaction type.'}), 404
+        #a Sale takes stock away and a Restock adds it
+        kind = transaction['Transaction_Type']
+        if (kind == 'Sale' and quantityChange > 0) or (kind == 'Restock' and quantityChange < 0):
+            mycon.rollback()
+            return jsonify({'message' : 'A Sale must be negative and a Restock must be positive.'}), 400
+        #a product set to Not available can't be sold (it can still be restocked)
+        if kind == 'Sale':
+            cursor.execute("select p.Name, p.Availability from Product_Variant v join Product p on p.Product_ID = v.Product_ID where v.Variant_ID = %s", (variantID,))
+            product = cursor.fetchone()
+            if product is not None and not int(product['Availability'] or 0):
+                mycon.rollback()
+                return jsonify({'message' : '%s is set to Not available, so it can\'t be sold. Set it back to Available first.' % product['Name']}), 400
+        cursor.execute("select Quantity from Inventory where Variant_ID = %s FOR UPDATE", (variantID,))
+        stock = cursor.fetchone()
+        if stock is None:
+            mycon.rollback()
+            return jsonify({'message': 'No inventory record for that variant'}), 404
+        #below here checks to make sure that the current stock plus the quantity change from the user is >= 0.
+        currentStock = int(stock['Quantity'])
+        if currentStock + quantityChange < 0:
+            mycon.rollback()
+            return jsonify({'message' : 'There is not enough stock to complete this request. %s items are in stock.' % (currentStock)}), 400
+        # date.today() uses this computer's date. CURDATE() used the database's UTC clock, so evening sales were saved as tomorrow.
+        cursor.execute("insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values (%s, %s, %s, %s, %s)",
+                       (transactionTypeID, quantityChange, date.today(), variantID, employeeID))
+        newInvoiceID = cursor.lastrowid
+        cursor.execute("update Inventory set Quantity = Quantity + %s where Variant_ID = %s", (quantityChange, variantID))
+        mycon.commit()
+        return jsonify({'message' : 'Invoice created and inventory updated.', 'Invoice_ID': newInvoiceID}), 201
+    except Exception:
+        mycon.rollback()
+        app.logger.exception('Invoice create failed')
+        return jsonify({'message' : 'The transaction could not be saved. Nothing was changed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
         mycon.close()
-        return jsonify({'message' : 'There are no variants with that ID. Try another ID number.'}), 404
-    if not transaction:
-        mycon.close()
-        return jsonify({'message' : 'Transaction type does not exist. Try a different transaction type.'}), 404
-    if not employee:
-        mycon.close()
-        return jsonify({'message' : 'Employee does not exist. Try another ID.'}), 404
-
-
-    #The code below here checks to make sure the product variant exists.
-    sql3 = "select Quantity from Inventory where Variant_ID = '%s'" % (variantID)
-    stock = execute_read_query(mycon,sql3)
-    if not stock:
-        mycon.close()
-        return jsonify({'message': 'No inventory record for that variant'}), 404
-    #below here checks to make sure that the current stock plus the quantity change from the user is > 0.
-    #If it is not, then the server rejects the request.
-    currentStock = stock[0]['Quantity']
-    if currentStock + quantityChange < 0:
-        mycon.close()
-        return jsonify({'message' : 'There is not enough stock to complete this request. %s items are in stock.' % (currentStock)}), 400
-    #This updates the inventoy amount based on the amount added or removed
-    sql4 = "insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values ('%s', '%s', '%s', '%s', '%s')" % (transactionTypeID, quantityChange, date.today(), variantID, employeeID)
-    # date.today() uses this computer's date. CURDATE() used the database's UTC clock, so evening sales were saved as tomorrow.
-    execute_update_query(mycon, sql4)
-    sql5 = "update Inventory set Quantity = Quantity + %s where Variant_ID = '%s'" % (quantityChange, variantID)
-    execute_update_query(mycon, sql5)
-
-    mycon.close()
-    return jsonify({'message' : 'Invoice created and inventory updated.'}), 201
 
 #Update (updates an invoice. The Invoice_ID must be sent in the request body to identify which invoice to change.)
+#Any of these can be changed: Transaction_Type_ID, Quantity_Change, Variant_ID (the item) and Date (YYYY-MM-DD).
+#Changing the quantity or the item moves the stock: the old change is undone on the old item and the new
+#change is applied to the new item. Everything is saved together, or nothing is if a check fails.
 @app.route('/update/invoice', methods=['PUT'])
 def updateInvoice():
-    mycon = get_connection()
-    userinput = request.get_json()
+    userinput = request.get_json(silent=True) or {}
     invoiceID = userinput.get('Invoice_ID')
-    transactionTypeID = userinput.get('Transaction_Type_ID')
-    quantityChange = userinput.get('Quantity_Change') #positive for additions, negative for removals
-
     if not invoiceID:
-        mycon.close()
         return jsonify({'message' : 'Invoice_ID is required.'}), 400
+    try:
+        invoiceID = int(invoiceID)
+        transactionTypeID = int(userinput['Transaction_Type_ID']) if userinput.get('Transaction_Type_ID') else None
+        newVariantID = int(userinput['Variant_ID']) if userinput.get('Variant_ID') else None
+        quantityChange = int(userinput['Quantity_Change']) if userinput.get('Quantity_Change') is not None else None
+        newDate = date.fromisoformat(str(userinput['Date'])) if userinput.get('Date') else None
+    except (ValueError, TypeError):
+        return jsonify({'message' : 'Invoice_ID, Transaction_Type_ID, Variant_ID and Quantity_Change must be whole numbers, and Date must be YYYY-MM-DD.'}), 400
+    if quantityChange == 0:
+        return jsonify({'message' : 'Quantity_Change cannot be 0.'}), 400
+    if newDate is not None and newDate > date.today():
+        return jsonify({'message' : 'The date cannot be in the future.'}), 400
 
-    #pulls the original invoice so the inventory can be corrected by the difference
-    sql = "select Quantity_Change, Variant_ID from Invoice where Invoice_ID = '%s'" % (invoiceID)
-    invoice = execute_read_query(mycon,sql)
-    if not invoice:
+    mycon = get_connection()
+    if mycon is None:
+        return jsonify({'message' : 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = mycon.cursor(dictionary=True)
+        #pulls the original invoice so the inventory can be corrected
+        cursor.execute('SELECT Quantity_Change, Variant_ID FROM Invoice WHERE Invoice_ID=%s FOR UPDATE', (invoiceID,))
+        invoice = cursor.fetchone()
+        if invoice is None:
+            mycon.rollback()
+            return jsonify({'message' : 'Invoice not found. Try a different Invoice_ID.'}), 404
+        oldQuantity = int(invoice['Quantity_Change'])
+        oldVariantID = int(invoice['Variant_ID'])
+        newQuantity = oldQuantity if quantityChange is None else quantityChange
+        variantID = oldVariantID if newVariantID is None else newVariantID
+
+        #checks that the new transaction type exists
+        if transactionTypeID is not None:
+            cursor.execute('SELECT Transaction_Type_ID FROM Transaction_Type WHERE Transaction_Type_ID=%s', (transactionTypeID,))
+            if cursor.fetchone() is None:
+                mycon.rollback()
+                return jsonify({'message' : 'Transaction type does not exist. Try a different transaction type.'}), 404
+
+        #locks the stock rows involved so two edits can't change them at the same time
+        cursor.execute('SELECT Variant_ID, Quantity FROM Inventory WHERE Variant_ID IN (%s, %s) FOR UPDATE', (oldVariantID, variantID))
+        stock = {int(row['Variant_ID']): int(row['Quantity']) for row in cursor.fetchall()}
+        if variantID not in stock or oldVariantID not in stock:
+            mycon.rollback()
+            return jsonify({'message' : 'No inventory record for that variant.'}), 404
+
+        #undo the old change on the old item, then apply the new change to the new item
+        before = dict(stock)
+        stock[oldVariantID] -= oldQuantity
+        stock[variantID] += newQuantity
+        for checkedID in {oldVariantID, variantID}:
+            if stock[checkedID] < 0:
+                mycon.rollback()
+                cursor.execute('SELECT p.Name, s.Size, c.Color FROM Product_Variant v JOIN Product p ON p.Product_ID=v.Product_ID '
+                               'JOIN Size s ON s.Size_ID=v.Size_ID JOIN Color c ON c.Color_ID=v.Color_ID WHERE v.Variant_ID=%s', (checkedID,))
+                item = cursor.fetchone() or {}
+                name = '%s (%s / %s)' % (item.get('Name', 'This item'), item.get('Size', '?'), item.get('Color', '?'))
+                return jsonify({'message' : 'There is not enough stock. %s has %s in stock.' % (name, before[checkedID])}), 400
+
+        #if all checks pass, then the update will be applied to the system.
+        if transactionTypeID is not None:
+            cursor.execute('UPDATE Invoice SET Transaction_Type_ID=%s WHERE Invoice_ID=%s', (transactionTypeID, invoiceID))
+        if newDate is not None:
+            cursor.execute('UPDATE Invoice SET Date=%s WHERE Invoice_ID=%s', (newDate, invoiceID))
+        cursor.execute('UPDATE Invoice SET Quantity_Change=%s, Variant_ID=%s WHERE Invoice_ID=%s', (newQuantity, variantID, invoiceID))
+        for changedID in {oldVariantID, variantID}:
+            cursor.execute('UPDATE Inventory SET Quantity=%s WHERE Variant_ID=%s', (stock[changedID], changedID))
+        mycon.commit()
+        return jsonify({'message' : 'Order updated.'})
+    except Exception:
+        mycon.rollback()
+        app.logger.exception('Invoice update failed')
+        return jsonify({'message' : 'The order could not be updated. Nothing was changed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
         mycon.close()
-        return jsonify({'message' : 'Invoice not found. Try a different Invoice_ID.'}), 404
-
-    oldQuantity = invoice[0]['Quantity_Change']
-    variantID = invoice[0]['Variant_ID']
-
-    #checks that the new transaction type exists
-    if transactionTypeID:
-        sql1 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
-        transaction = execute_read_query(mycon,sql1)
-        if not transaction:
-            mycon.close()
-            return jsonify({'message' : 'Transaction type does not exist. Try a different transaction type.'}), 404
-
-    #checks that the new quantity won't take the stock below 0
-    if quantityChange is not None:
-        quantityChange = int(quantityChange)
-        difference = quantityChange - oldQuantity
-        sql2 = "select Quantity from Inventory where Variant_ID = '%s'" % (variantID)
-        stock = execute_read_query(mycon,sql2)
-        if not stock:
-            mycon.close()
-            return jsonify({'message' : 'No inventory record for that variant'}), 404
-        currentStock = stock[0]['Quantity']
-        if currentStock + difference < 0:
-            mycon.close()
-            return jsonify({'message' : 'There is not enough stock to complete this request. %s items are in stock.' % (currentStock)}), 400
-
-    #if all checks passe, then the update will be applied to the system.
-    if transactionTypeID:
-        sql3 = "update Invoice set Transaction_Type_ID = '%s' where Invoice_ID = '%s'" % (transactionTypeID, invoiceID)
-        execute_update_query(mycon,sql3)
-
-    if quantityChange is not None:
-        sql4 = "update Invoice set Quantity_Change = '%s' where Invoice_ID = '%s'" % (quantityChange, invoiceID)
-        execute_update_query(mycon,sql4)
-        #corrects the inventory by the difference between the new and old quantity
-        sql5 = "update Inventory set Quantity = Quantity + %s where Variant_ID = '%s'" % (difference, variantID)
-        execute_update_query(mycon,sql5)
-
-    mycon.close()
-    return jsonify({'message' : 'Invoice updated.'})
 
 #Delete (deletes an invoice and undoes its change to the inventory. The Invoice_ID must be sent in the request body.)
+#Deleting and undoing the stock change happen together in one transaction, or not at all.
 @app.route('/delete/invoice', methods=['DELETE'])
 def deleteInvoice():
-    mycon = get_connection()
-    userinput = request.get_json()
-    invoiceID = userinput.get('Invoice_ID')
-
-    if not invoiceID:
-        mycon.close()
+    userinput = request.get_json(silent=True) or {}
+    try:
+        invoiceID = int(userinput.get('Invoice_ID'))
+    except (ValueError, TypeError):
         return jsonify({'message' : 'Invoice_ID is required.'}), 400
 
-    #pulls the invoice so its quantity can be taken back out of the inventory
-    sql = "select Quantity_Change, Variant_ID from Invoice where Invoice_ID = '%s'" % (invoiceID)
-    invoice = execute_read_query(mycon,sql)
-    if not invoice:
+    mycon = get_connection()
+    if mycon is None:
+        return jsonify({'message' : 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = mycon.cursor(dictionary=True)
+        #pulls the invoice so its quantity can be taken back out of the inventory
+        cursor.execute("select Quantity_Change, Variant_ID from Invoice where Invoice_ID = %s FOR UPDATE", (invoiceID,))
+        invoice = cursor.fetchone()
+        if invoice is None:
+            mycon.rollback()
+            return jsonify({'message' : 'Invoice not found. Try a different Invoice_ID.'}), 404
+        oldQuantity = int(invoice['Quantity_Change'])
+        variantID = invoice['Variant_ID']
+        #undoing a restock removes stock, so this checks the stock won't go below 0
+        cursor.execute("select Quantity from Inventory where Variant_ID = %s FOR UPDATE", (variantID,))
+        stock = cursor.fetchone()
+        if stock is None:
+            mycon.rollback()
+            return jsonify({'message' : 'No inventory record for that variant'}), 404
+        currentStock = int(stock['Quantity'])
+        if currentStock - oldQuantity < 0:
+            mycon.rollback()
+            return jsonify({'message' : 'This invoice cannot be deleted. Undoing it would take the stock below 0. %s items are in stock.' % (currentStock)}), 400
+        #deletes the invoice and reverses its change to the inventory
+        cursor.execute("delete from Invoice where Invoice_ID = %s", (invoiceID,))
+        cursor.execute("update Inventory set Quantity = Quantity - %s where Variant_ID = %s", (oldQuantity, variantID))
+        mycon.commit()
+        return jsonify({'message' : 'Invoice deleted and inventory updated.'})
+    except Exception:
+        mycon.rollback()
+        app.logger.exception('Invoice delete failed')
+        return jsonify({'message' : 'The order could not be deleted. Nothing was changed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
         mycon.close()
-        return jsonify({'message' : 'Invoice not found. Try a different Invoice_ID.'}), 404
-
-    oldQuantity = invoice[0]['Quantity_Change']
-    variantID = invoice[0]['Variant_ID']
-
-    #undoing a restock removes stock, so this checks the stock won't go below 0
-    sql1 = "select Quantity from Inventory where Variant_ID = '%s'" % (variantID)
-    stock = execute_read_query(mycon,sql1)
-    if not stock:
-        mycon.close()
-        return jsonify({'message' : 'No inventory record for that variant'}), 404
-    currentStock = stock[0]['Quantity']
-    if currentStock - oldQuantity < 0:
-        mycon.close()
-        return jsonify({'message' : 'This invoice cannot be deleted. Undoing it would take the stock below 0. %s items are in stock.' % (currentStock)}), 400
-
-    #deletes the invoice and reverses its change to the inventory
-    sql2 = "delete from Invoice where Invoice_ID = '%s'" % (invoiceID)
-    execute_update_query(mycon,sql2)
-    sql3 = "update Inventory set Quantity = Quantity - %s where Variant_ID = '%s'" % (oldQuantity, variantID)
-    execute_update_query(mycon,sql3)
-
-    mycon.close()
-    return jsonify({'message' : 'Invoice deleted and inventory updated.'})
 
 #Update (the inventory edit form. Sets a variant's stock to a new quantity and records the change as an Adjustment invoice.)
 #Variant_ID and New_Quantity come from the edit form. The employee ID gets filled in from the session store.
@@ -640,14 +727,14 @@ def createColor():
         return jsonify({'message' : 'Color is required.'}), 400
 
     #checks to make sure the color isn't already in the table
-    sql = "select Color_ID from Color where Color = '%s'" % (color)
-    storedColor = execute_read_query(mycon,sql)
+    sql = "select Color_ID from Color where Color = %s"
+    storedColor = execute_read_query(mycon, sql, (color,))
     if storedColor:
         mycon.close()
         return jsonify({'message' : 'That color already exists.'}), 409
 
-    sql1 = "insert into Color (Color) values ('%s')" % (color)
-    execute_update_query(mycon,sql1)
+    sql1 = "insert into Color (Color) values (%s)"
+    execute_update_query(mycon, sql1, (color,))
     mycon.close()
     return jsonify({'message' : 'Color added.'}), 201
 
@@ -664,21 +751,21 @@ def updateColor():
         return jsonify({'message' : 'Color_ID and Color are required.'}), 400
 
     #checks that the color exists
-    sql = "select Color_ID from Color where Color_ID = '%s'" % (colorID)
-    storedColor = execute_read_query(mycon,sql)
+    sql = "select Color_ID from Color where Color_ID = %s"
+    storedColor = execute_read_query(mycon, sql, (colorID,))
     if not storedColor:
         mycon.close()
         return jsonify({'message' : 'Color not found. Try a different Color_ID.'}), 404
 
     #checks that a different color doesn't already have the new name
-    sql1 = "select Color_ID from Color where Color = '%s' and Color_ID != '%s'" % (color, colorID)
-    duplicate = execute_read_query(mycon,sql1)
+    sql1 = "select Color_ID from Color where Color = %s and Color_ID != %s"
+    duplicate = execute_read_query(mycon, sql1, (color, colorID))
     if duplicate:
         mycon.close()
         return jsonify({'message' : 'That color already exists.'}), 409
 
-    sql2 = "update Color set Color = '%s' where Color_ID = '%s'" % (color, colorID)
-    execute_update_query(mycon,sql2)
+    sql2 = "update Color set Color = %s where Color_ID = %s"
+    execute_update_query(mycon, sql2, (color, colorID))
     mycon.close()
     return jsonify({'message' : 'Color updated.'})
 
@@ -694,21 +781,21 @@ def deleteColor():
         return jsonify({'message' : 'Color_ID is required.'}), 400
 
     #checks that the color exists
-    sql = "select Color_ID from Color where Color_ID = '%s'" % (colorID)
-    storedColor = execute_read_query(mycon,sql)
+    sql = "select Color_ID from Color where Color_ID = %s"
+    storedColor = execute_read_query(mycon, sql, (colorID,))
     if not storedColor:
         mycon.close()
         return jsonify({'message' : 'Color not found. Try a different Color_ID.'}), 404
 
     #a color used by a product variant can't be deleted
-    sql1 = "select Variant_ID from Product_Variant where Color_ID = '%s'" % (colorID)
-    variants = execute_read_query(mycon,sql1)
+    sql1 = "select Variant_ID from Product_Variant where Color_ID = %s"
+    variants = execute_read_query(mycon, sql1, (colorID,))
     if variants:
         mycon.close()
         return jsonify({'message' : "This color is used by product variants and can't be deleted."}), 409
 
-    sql2 = "delete from Color where Color_ID = '%s'" % (colorID)
-    execute_update_query(mycon,sql2)
+    sql2 = "delete from Color where Color_ID = %s"
+    execute_update_query(mycon, sql2, (colorID,))
     mycon.close()
     return jsonify({'message' : 'Color deleted.'})
 
@@ -735,14 +822,14 @@ def createSize():
         return jsonify({'message' : 'Size is required.'}), 400
 
     #checks to make sure the size isn't already in the table
-    sql = "select Size_ID from Size where Size = '%s'" % (size)
-    storedSize = execute_read_query(mycon,sql)
+    sql = "select Size_ID from Size where Size = %s"
+    storedSize = execute_read_query(mycon, sql, (size,))
     if storedSize:
         mycon.close()
         return jsonify({'message' : 'That size already exists.'}), 409
 
-    sql1 = "insert into Size (Size) values ('%s')" % (size)
-    execute_update_query(mycon,sql1)
+    sql1 = "insert into Size (Size) values (%s)"
+    execute_update_query(mycon, sql1, (size,))
     mycon.close()
     return jsonify({'message' : 'Size added.'}), 201
 
@@ -759,21 +846,21 @@ def updateSize():
         return jsonify({'message' : 'Size_ID and Size are required.'}), 400
 
     #checks that the size exists
-    sql = "select Size_ID from Size where Size_ID = '%s'" % (sizeID)
-    storedSize = execute_read_query(mycon,sql)
+    sql = "select Size_ID from Size where Size_ID = %s"
+    storedSize = execute_read_query(mycon, sql, (sizeID,))
     if not storedSize:
         mycon.close()
         return jsonify({'message' : 'Size not found. Try a different Size_ID.'}), 404
 
     #checks that a different size doesn't already have the new name
-    sql1 = "select Size_ID from Size where Size = '%s' and Size_ID != '%s'" % (size, sizeID)
-    duplicate = execute_read_query(mycon,sql1)
+    sql1 = "select Size_ID from Size where Size = %s and Size_ID != %s"
+    duplicate = execute_read_query(mycon, sql1, (size, sizeID))
     if duplicate:
         mycon.close()
         return jsonify({'message' : 'That size already exists.'}), 409
 
-    sql2 = "update Size set Size = '%s' where Size_ID = '%s'" % (size, sizeID)
-    execute_update_query(mycon,sql2)
+    sql2 = "update Size set Size = %s where Size_ID = %s"
+    execute_update_query(mycon, sql2, (size, sizeID))
     mycon.close()
     return jsonify({'message' : 'Size updated.'})
 
@@ -789,21 +876,21 @@ def deleteSize():
         return jsonify({'message' : 'Size_ID is required.'}), 400
 
     #checks that the size exists
-    sql = "select Size_ID from Size where Size_ID = '%s'" % (sizeID)
-    storedSize = execute_read_query(mycon,sql)
+    sql = "select Size_ID from Size where Size_ID = %s"
+    storedSize = execute_read_query(mycon, sql, (sizeID,))
     if not storedSize:
         mycon.close()
         return jsonify({'message' : 'Size not found. Try a different Size_ID.'}), 404
 
     #a size used by a product variant can't be deleted
-    sql1 = "select Variant_ID from Product_Variant where Size_ID = '%s'" % (sizeID)
-    variants = execute_read_query(mycon,sql1)
+    sql1 = "select Variant_ID from Product_Variant where Size_ID = %s"
+    variants = execute_read_query(mycon, sql1, (sizeID,))
     if variants:
         mycon.close()
         return jsonify({'message' : "This size is used by product variants and can't be deleted."}), 409
 
-    sql2 = "delete from Size where Size_ID = '%s'" % (sizeID)
-    execute_update_query(mycon,sql2)
+    sql2 = "delete from Size where Size_ID = %s"
+    execute_update_query(mycon, sql2, (sizeID,))
     mycon.close()
     return jsonify({'message' : 'Size deleted.'})
 
@@ -831,14 +918,14 @@ def createTransactionType():
         return jsonify({'message' : 'Transaction_Type is required.'}), 400
 
     #checks to make sure the transaction type isn't already in the table
-    sql = "select Transaction_Type_ID from Transaction_Type where Transaction_Type = '%s'" % (transactionType)
-    storedType = execute_read_query(mycon,sql)
+    sql = "select Transaction_Type_ID from Transaction_Type where Transaction_Type = %s"
+    storedType = execute_read_query(mycon, sql, (transactionType,))
     if storedType:
         mycon.close()
         return jsonify({'message' : 'That transaction type already exists.'}), 409
 
-    sql1 = "insert into Transaction_Type (Transaction_Type) values ('%s')" % (transactionType)
-    execute_update_query(mycon,sql1)
+    sql1 = "insert into Transaction_Type (Transaction_Type) values (%s)"
+    execute_update_query(mycon, sql1, (transactionType,))
     mycon.close()
     return jsonify({'message' : 'Transaction type added.'}), 201
 
@@ -855,8 +942,8 @@ def updateTransactionType():
         return jsonify({'message' : 'Transaction_Type_ID and Transaction_Type are required.'}), 400
 
     #checks that the transaction type exists
-    sql = "select Transaction_Type from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
-    storedType = execute_read_query(mycon,sql)
+    sql = "select Transaction_Type from Transaction_Type where Transaction_Type_ID = %s"
+    storedType = execute_read_query(mycon, sql, (transactionTypeID,))
     if not storedType:
         mycon.close()
         return jsonify({'message' : 'Transaction type not found. Try a different Transaction_Type_ID.'}), 404
@@ -867,14 +954,14 @@ def updateTransactionType():
         return jsonify({'message' : "Restock, Sale, and Adjustment are used by the invoice system and can't be changed."}), 409
 
     #checks that a different transaction type doesn't already have the new name
-    sql1 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type = '%s' and Transaction_Type_ID != '%s'" % (transactionType, transactionTypeID)
-    duplicate = execute_read_query(mycon,sql1)
+    sql1 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type = %s and Transaction_Type_ID != %s"
+    duplicate = execute_read_query(mycon, sql1, (transactionType, transactionTypeID))
     if duplicate:
         mycon.close()
         return jsonify({'message' : 'That transaction type already exists.'}), 409
 
-    sql2 = "update Transaction_Type set Transaction_Type = '%s' where Transaction_Type_ID = '%s'" % (transactionType, transactionTypeID)
-    execute_update_query(mycon,sql2)
+    sql2 = "update Transaction_Type set Transaction_Type = %s where Transaction_Type_ID = %s"
+    execute_update_query(mycon, sql2, (transactionType, transactionTypeID))
     mycon.close()
     return jsonify({'message' : 'Transaction type updated.'})
 
@@ -890,8 +977,8 @@ def deleteTransactionType():
         return jsonify({'message' : 'Transaction_Type_ID is required.'}), 400
 
     #checks that the transaction type exists
-    sql = "select Transaction_Type from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
-    storedType = execute_read_query(mycon,sql)
+    sql = "select Transaction_Type from Transaction_Type where Transaction_Type_ID = %s"
+    storedType = execute_read_query(mycon, sql, (transactionTypeID,))
     if not storedType:
         mycon.close()
         return jsonify({'message' : 'Transaction type not found. Try a different Transaction_Type_ID.'}), 404
@@ -902,14 +989,14 @@ def deleteTransactionType():
         return jsonify({'message' : "Restock, Sale, and Adjustment are used by the invoice system and can't be deleted."}), 409
 
     #a transaction type used by an invoice can't be deleted
-    sql1 = "select Invoice_ID from Invoice where Transaction_Type_ID = '%s'" % (transactionTypeID)
-    invoices = execute_read_query(mycon,sql1)
+    sql1 = "select Invoice_ID from Invoice where Transaction_Type_ID = %s"
+    invoices = execute_read_query(mycon, sql1, (transactionTypeID,))
     if invoices:
         mycon.close()
         return jsonify({'message' : "This transaction type is used by invoices and can't be deleted."}), 409
 
-    sql2 = "delete from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
-    execute_update_query(mycon,sql2)
+    sql2 = "delete from Transaction_Type where Transaction_Type_ID = %s"
+    execute_update_query(mycon, sql2, (transactionTypeID,))
     mycon.close()
     return jsonify({'message' : 'Transaction type deleted.'})
 
@@ -1078,12 +1165,20 @@ def update_product_variant(variant_id):
 @app.route('/api/product_variants/<int:variant_id>', methods=['DELETE'])
 def delete_product_variant(variant_id):
     mycon = get_connection()
-    #a variant with inventory or invoices can't be deleted because those rows reference its Variant_ID
-    inventory = execute_read_query(mycon, "SELECT Inventory_ID FROM Inventory WHERE Variant_ID=%s", (variant_id,))
+    #a variant with orders (invoices) or stock can't be deleted, so its history and stock are never lost.
+    #(in practice: a variant added by mistake with 0 starting stock and never sold or adjusted can be deleted.)
+    #every variant gets an Inventory row when it's created, so an empty one (0 in stock) is removed along with it.
     invoices = execute_read_query(mycon, "SELECT Invoice_ID FROM Invoice WHERE Variant_ID=%s", (variant_id,))
-    if inventory or invoices:
+    if invoices:
         mycon.close()
-        return jsonify({"message": "This variant has inventory or invoices and can't be deleted."}), 409
+        return jsonify({"message": "This variant has orders, so it can't be deleted. It keeps the sales and stock history."}), 409
+    stock = execute_read_query(mycon, "SELECT COALESCE(SUM(Quantity), 0) AS units FROM Inventory WHERE Variant_ID=%s", (variant_id,))
+    if stock and int(stock[0]['units'] or 0) > 0:
+        mycon.close()
+        return jsonify({"message": "This variant still has %s in stock, so it can't be deleted." % int(stock[0]['units'])}), 409
+    error = run_write(mycon, "DELETE FROM Inventory WHERE Variant_ID=%s", (variant_id,))
+    if error:
+        return db_error_response(mycon, error)
     error = run_write(mycon, "DELETE FROM Product_Variant WHERE Variant_ID=%s", (variant_id,))
     if error:
         return db_error_response(mycon, error)
@@ -1146,14 +1241,28 @@ def bestSellers():
     if days < 0:
         return jsonify({'message': 'days cannot be negative.'}), 400
 
+    #A custom range (?from=YYYY-MM-DD&to=YYYY-MM-DD) takes the place of days.
+    try:
+        rangeStart = date.fromisoformat(request.args['from']) if request.args.get('from') else None
+        rangeEnd = date.fromisoformat(request.args['to']) if request.args.get('to') else None
+    except ValueError:
+        return jsonify({'message': 'from and to must be dates (YYYY-MM-DD).'}), 400
+    if rangeStart and rangeEnd and rangeStart > rangeEnd:
+        return jsonify({'message': 'The start date must be on or before the end date.'}), 400
+
     #Sales are saved as negative Quantity_Change (a sale of 3 is -3), so -SUM gives the number sold.
+    #First_Sold / Last_Sold are the first and last day each item sold in the period.
     dateFilter = ''
     params = ()
-    if days > 0:
+    if rangeStart or rangeEnd:
+        dateFilter = 'and i.Date >= %s and i.Date <= %s'
+        params = (rangeStart or date(2000, 1, 1), rangeEnd or date.today())
+    elif days > 0:
         dateFilter = 'and i.Date >= %s'
         from datetime import timedelta
         params = (date.today() - timedelta(days = days - 1),)
-    salesPerVariant = """select i.Variant_ID, -sum(i.Quantity_Change) as Units
+    salesPerVariant = """select i.Variant_ID, -sum(i.Quantity_Change) as Units,
+            min(i.Date) as First_Sold, max(i.Date) as Last_Sold
         from Invoice i
         join Transaction_Type t on t.Transaction_Type_ID = i.Transaction_Type_ID
         where t.Transaction_Type = 'Sale' and i.Quantity_Change < 0 """ + dateFilter + """
@@ -1165,7 +1274,8 @@ def bestSellers():
 
     sql = """select p.Product_ID, p.Name as Product, c.Category,
             coalesce(sum(sales.Units), 0) as Units_Sold,
-            coalesce(sum(sales.Units * v.Price), 0) as Revenue
+            coalesce(sum(sales.Units * v.Price), 0) as Revenue,
+            min(sales.First_Sold) as First_Sold, max(sales.Last_Sold) as Last_Sold
         from Product p
         join Category c on c.Category_ID = p.Category_ID
         left join Product_Variant v on v.Product_ID = p.Product_ID
@@ -1176,7 +1286,8 @@ def bestSellers():
 
     sql2 = """select v.Variant_ID, p.Name as Product, s.Size, co.Color, v.Price,
             coalesce(sales.Units, 0) as Units_Sold,
-            coalesce(sales.Units, 0) * v.Price as Revenue
+            coalesce(sales.Units, 0) * v.Price as Revenue,
+            sales.First_Sold, sales.Last_Sold, p.Product_ID
         from Product_Variant v
         join Product p on p.Product_ID = v.Product_ID
         join Size s on s.Size_ID = v.Size_ID
@@ -1198,6 +1309,8 @@ def bestSellers():
             row['Revenue'] = float(row['Revenue'])
             if 'Price' in row:
                 row['Price'] = float(row['Price'])
+            for key in ('First_Sold', 'Last_Sold'):
+                row[key] = str(row[key])[:10] if row.get(key) else None
             if row['Units_Sold'] != previousUnits:
                 rank = position
                 previousUnits = row['Units_Sold']
@@ -1215,8 +1328,10 @@ def bestSellers():
 
 
 # Add reporting endpoints, then protect all routes except health/login.
-register_reporting_routes(app, get_db_connection, execute_read_query)
+current_threshold = register_reporting_routes(app, get_db_connection, execute_read_query)
 install_auth(app, get_db_connection, execute_read_query)
+# Edit history (backend/history.py) is registered after install_auth, so it knows who is making each change.
+register_history(app, get_db_connection, execute_read_query, current_threshold)
 
 # --- START THE API ---
 if __name__ == '__main__':

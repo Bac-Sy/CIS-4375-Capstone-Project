@@ -1,0 +1,32 @@
+<%
+  // Shared top of every report page: report tabs, plus Preview PDF and Download Excel.
+  // Include with: include('../template/reportbar', { reportKey: 'sales', exportHref: '/reports/sales?from=…&to=…', reportTitle: 'Sales report', reportSubtitle: '…' })
+  // exportHref is the report's address with its filters; format=pdf / format=xlsx are added here.
+  const barKey = typeof reportKey !== 'undefined' ? reportKey : '';
+  const barExport = typeof exportHref !== 'undefined' ? exportHref : '';
+  const withFormat = f => barExport + (barExport.includes('?') ? (/[?&]$/.test(barExport) ? '' : '&') : '?') + 'format=' + f;
+  const barTitle = typeof reportTitle !== 'undefined' ? reportTitle : 'Report';
+  const barSubtitle = typeof reportSubtitle !== 'undefined' ? reportSubtitle : '';
+  const reportTabs = [['sales', 'Sales report', '/reports/sales'], ['inventory', 'Inventory report', '/reports/inventory'], ['best', 'Best sellers', '/reports/best-sellers']];
+  if (typeof Role !== 'undefined' && Role === 'Manager') reportTabs.push(['history', 'Edit history', '/reports/history']);
+%>
+<header class="page-header page-header-row report-head">
+  <div>
+    <h1><%= barTitle %></h1>
+    <% if (barSubtitle) { %><p class="page-sub"><%= barSubtitle %></p><% } %>
+  </div>
+  <% if (barExport) { %>
+  <div class="report-actions no-print">
+    <button type="button" class="btn btn-outline-secondary" data-pdf-preview="<%= withFormat('pdf') %>"
+            data-pdf-title="<%= barTitle %>" data-pdf-subtitle="<%= barSubtitle %>">Preview PDF</button>
+    <a class="scc-btn" href="<%= withFormat('xlsx') %>">Download Excel</a>
+  </div>
+  <% } %>
+</header>
+<nav class="report-tabs no-print" aria-label="Reports">
+  <% reportTabs.forEach(function(t) { %>
+    <a href="<%= t[2] %>" class="<%= barKey === t[0] ? 'active' : '' %>"<% if (barKey === t[0]) { %> aria-current="page"<% } %>><%= t[1] %></a>
+  <% }); %>
+</nav>
+<% const printedOn = new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); %>
+<p class="print-only report-print-line">Space City Couture · <%= barTitle %><%= barSubtitle ? ' · ' + barSubtitle : '' %> · made <%= printedOn %></p>

@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const root = path.join(__dirname, '..', 'frontend', 'views');
+const root = path.join(__dirname, '..', 'views'); // frontend/views (this file is in frontend/tests)
 
 // Lightweight EJS tag compiler for offline JavaScript-syntax validation.
 function compile(template) {
@@ -11,7 +11,8 @@ function compile(template) {
   let js = "let __out=''; with (locals) {\n";
   while ((match = re.exec(template))) {
     js += `__out += ${JSON.stringify(template.slice(last, match.index))};\n`;
-    if (match[1] === '=' || match[1] === '-') js += `__out += (${match[2]});\n`;
+    // <%- include(...); %> is valid EJS, so drop a trailing semicolon before wrapping the expression.
+    if (match[1] === '=' || match[1] === '-') js += `__out += (${match[2].trim().replace(/;\s*$/, '')});\n`;
     else js += match[2] + '\n';
     last = re.lastIndex;
   }
@@ -19,7 +20,7 @@ function compile(template) {
   return new Function('locals', 'include', js);
 }
 const sampleUser = { id:'1', name:'Test User', firstName:'Test', username:'testuser', email:'test@example.org', role:'Manager' };
-const fmt = require('../frontend/lib/format');
+const fmt = require('../lib/format');
 const partialData = { user:sampleUser, authenticated:true, FirstName:'Test', Role:'Manager', csrfToken:'VALID_CSRF', env:'development', api:{status:'ok'}, fmt, message:null, title:'Test', showStatus:true, active:'dashboard' };
 const data = { ...partialData,
   rows:[{ Variant_ID:1,Product_ID:1,Product:'Satin Midi Dress',Size:'M',Color:'Black',Location:'Main Store',Quantity:3 }],
@@ -33,7 +34,23 @@ const data = { ...partialData,
   categories:[{Category_ID:1,Category:'Dresses'}], locations:[{Location_ID:1,Location_Name:'Main Store'}],
   sizes:[{Size_ID:1,Size:'M'}], colors:[{Color_ID:1,Color:'Black'}],
   error:null, ErrorMessage:null, username:'', Username:'', detail:'Not found', title:'Error',
-  data:{sales:{revenue:50,units:1,days:30},recent_orders:[],low_stock:[],low_stock_threshold:5,trend:[]}, donut:null, trend:null,
+  data:{sales:{revenue:50,units:1,days:30},recent_by_type:{Sale:[],Restock:[],Adjustment:[]},low_stock:[],low_stock_threshold:5,inventory_totals:{units:3,items:1,products:1}}, donut:null, flow:null, recentType:'Sale',
+  // Edit history
+  area:'', employee:'', pageNumber:1, hasMore:false, total:1, areas:['Orders','Stock'], people:[{id:'1',name:'Test User'}],
+  entries:[{time:'2026-11-13T21:05:00',employee:'Test User',area:'Orders',kind:'Order',action:'Edited',target:'Order #25 (Sale, Dress – M / Black)',changes:[{field:'Quantity change',from:'-1',to:'-2'}]},{time:'2026-11-13T21:06:00',employee:'Test User',area:'Catalog',kind:'Supplier',action:'Added',target:'S',changes:[{field:'Name',from:'',to:'S'}]},{time:'2026-11-13T21:07:00',employee:'Test User',area:'Products',kind:'Product',action:'Deleted',target:'Dress',changes:[]}],
+  isNew: (kind, key) => key === 'Hats', newLabel: (kind, key, label) => key === 'Hats' ? '★ ' + label + ' · New' : label,
+  // Reports
+  from:'2026-11-01', to:'2026-11-14', rangeKey:'this-month', ranges:[{key:'this-month',label:'This month',from:'2026-11-01',to:'2026-11-14'}], manager:true,
+  summary:{revenue:50,units:1,sales:1,cost:20,profit:30,average_sale:50,margin:60}, byCategory:[], byDay:[], sales:[], totals:{units:3,items:1,products:1,value_cost:6,value_retail:30,low:1,out:0}, generated:'2026-11-14',
+  // Best sellers report
+  periods:[{days:30,label:'Last 30 days'}], days:30, view:'product', byProduct:[], byItem:[], totalUnits:0, totalRevenue:0,
+  // Inventory (grouped), Add variants, Edit order, Settings, Manage catalog
+  groups:[{id:1,name:'Satin Midi Dress',category:'Dresses',available:false,variants:[{Variant_ID:1,Product_ID:1,Size:'M',Color:'Black',Location:'Main Store',Quantity:3,Price:10}],total:3,low:1}],
+  allGroups:undefined, lowOnly:false, lowCount:1, adjusting:'1', existing:['1-1'], variantCounts:{1:1}, renaming:null,
+  order:{invoice_id:25,date:'2026-11-12',transaction_type:'Sale',product:'Satin Midi Dress',size:'M',color:'Black',quantity_change:-1,employee:'Test User',variant_id:1},
+  today:'2026-11-13', storeSettings:{low_stock_threshold:5},
+  menuLabel:'Actions for Satin Midi Dress', menuItems:[{label:'Edit product',href:'/products/1/edit',icon:'edit'},{label:'Delete',action:'/products/1/delete',confirm:'Delete?',danger:true}],
+  employee:{id:2,First_Name:'Maria',Last_Name:'Lopez',Username:'mlopez',Email:'m@example.org',Role:'Employee'}, form:{},
 };
 let compiled = 0;
 for (const folder of ['pages','template']) {

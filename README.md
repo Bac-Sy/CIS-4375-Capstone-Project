@@ -2,25 +2,39 @@
 
 **Stack:** MySQL on AWS RDS (managed in MySQL Workbench) → Flask API (`backend/`) → Node/Express server (`frontend/server.js`) rendering EJS views (`frontend/`)
 
+**Using the app:** see the [User Guide](frontend/USER_GUIDE.md).
+**Setting it up:** see [Backend](#backend-flask-api-port-5000) and [Frontend](#frontend-express--ejs-port-8080) below, then [First manager account](#first-manager-account).
+
 ```
 backend/
-  api.py              Flask API routes
-  sql.py              DBconnection, execute_read_query, execute_update_query
+  api.py              Flask API routes (CRUD, login, invoices, stock adjustments)
+  reporting.py        read-only reports: /inventory, /orders, /employees, /dashboard, /report/inventory, /report/sales, store settings
+  security.py         login tokens and the check that every API call is logged in
+  history.py          edit history: records every change (who, when, before → after) in edit_history.jsonl
+  sql.py              DBconnection (reuses connections), execute_read_query, execute_update_query
   creds.py            mycreds class: reads DB login from backend/.env.<env>
+  create_manager.py   creates the first Manager account on a new database
   requirements.txt
-frontend/views/
-  pages/              one .ejs file per page (index.ejs, ...)
-  template/           shared pieces: head, nav, footer, messages, scripts
-public/css/           custom CSS (styles.css)
 frontend/
-    server.js         Express routes
+  server.js           Express routes
+  lib/                charts (donut, stock in vs. out) and formatting helpers
+  views/pages/        one .ejs file per page (index.ejs, ...; report-sales.ejs and report-inventory.ejs are the Reports)
+  views/template/     shared pieces: head, nav, footer, messages, scripts, confirm, rowmenu (the ⋯ menu), reportbar (report tabs, Print, CSV)
+  tests/              offline checks (see Running the tests)
+  USER_GUIDE.md       user guide
+public/
+  css/styles.css      all custom CSS
+  main.js             menu, ⋯ menus, Inventory adjust buttons
+  js/                 page scripts (add-variants.js, edit-order.js, record-transaction.js, pdf-viewer.js: the PDF preview window)
+database/             create_capstone_tables.sql, sample_data.sql
+docs/                 design suggestions and before/after screenshots
 package.json
 ```
 
 ### Adding a feature
 
 1. **Flask route** in `backend/api.py`: query the database and return JSON.
-2. **Express route** in `frontend/server.js`: call that API with `axios`, then `res.render()` a page.
+2. **Express route** in `frontend/server.js`: call that API with `apiGet` / `apiPost` / `apiPut` (they add the login token), then `page(req, res, 'name', {...})` to render it.
 3. **Page** in `frontend/views/pages/`: copy `index.ejs` and change the `<main>` section.
 
 Always pass user input as query parameters, never with `%` formatting (that allows SQL injection):
@@ -101,7 +115,7 @@ Before running `python api.py`, set `AUTH_TOKEN_SECRET` in `backend/.env.develop
 - Without it, login fails with "Flask or MySQL may be unavailable."
 - Only put real secrets in `.env.development`, never in the `.example` files, which are committed.
 
-Set `APP_ENV=test` or `APP_ENV=production` to switch environments. Visit http://localhost:5000/db/check to confirm the database connection.
+Set `APP_ENV=test` or `APP_ENV=production` to switch environments. Visit http://localhost:5000/health to confirm the API is running (every other API address needs a login). To confirm the database connection, log in to the website: the Dashboard loads its numbers from the database, and its footer shows the Flask API status.
 
 ### Frontend (Express + EJS, port 8080)
 The Express server is `frontend/server.js`. `npm run dev` starts `frontend/server.js`, not the old top-level `server.js`.
@@ -118,3 +132,32 @@ npm start              # production
 Open http://localhost:8080. The page shows whether the Flask API is reachable. The Flask backend must be running separately on port 5000.
 
 > Real `.env.*` files are git-ignored. Never commit passwords.
+
+### First manager account
+On a new, empty database nobody can log in yet, and adding employees needs a manager. Create the first one from the `backend` folder (with the same `.env.development` as the API):
+```bash
+python create_manager.py
+```
+It asks for a name, username, email and password, and saves a Manager. After that, managers add everyone else from **Employees → + Add employee**. (`database/sample_data.sql` also creates a "Test User" manager for testing.)
+
+### Store settings and edit history
+The low stock threshold (default 5) can be changed by a manager on **Settings**. It's saved in `backend/settings.json`, which is git-ignored; until someone saves one, `LOW_STOCK_THRESHOLD` in the backend `.env` file is used.
+
+Every change made in the app (who, when, before → after) is recorded in `backend/edit_history.jsonl` by `backend/history.py`, and managers see it under **Reports → Edit history**. It's a file rather than a database table, so the database design doesn't change. Both files are git-ignored and live only on the computer that runs the API, so **back them up** along with the database.
+
+### Report PDFs and Excel files
+Every report has **Preview PDF** and **Download Excel**. The PDF is made by Microsoft Edge (built into Windows) or Google Chrome running in the background (`puppeteer-core`), from the same page you see, using its print layout. If neither browser is in its usual place, set `PDF_BROWSER` in the frontend `.env` file to the browser's full path. The preview window uses pdf.js (`/vendor/pdfjs`, from `node_modules`), and the Excel files are made with `exceljs`.
+
+### Running the tests
+These run offline (no database or servers needed), from the project folder:
+```bash
+node frontend/tests/check_routes.js        # routes exist, logins and manager-only actions are enforced, product flow
+node frontend/tests/verify_templates.js    # every page template compiles and every form has its CSRF token
+python frontend/tests/check_security.py    # login tokens, and that the API refuses calls without one
+```
+
+### Stopping a server that's still running
+If a port is already in use (`EADDRINUSE` or "Address already in use"), something is still running on it. In PowerShell:
+```powershell
+8080, 5000 | ForEach-Object { Get-NetTCPConnection -LocalPort $_ -State Listen -ErrorAction SilentlyContinue } | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```

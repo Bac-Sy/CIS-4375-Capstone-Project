@@ -1,0 +1,139 @@
+<%
+  const isMgr = typeof manager !== 'undefined' && manager;
+  const s = typeof summary !== 'undefined' && summary ? summary : null;
+  const rangeText = fmt.date(from) + ' – ' + fmt.date(to);
+  const query = 'from=' + from + '&to=' + to;
+  const pct = n => (Math.round(n * 10) / 10) + '%';
+%>
+<!doctype html>
+<html lang="en">
+<head>
+  <%- include('../template/head', { title: 'Sales report' }) %>
+</head>
+<body>
+<div class="app">
+  <%- include('../template/nav', { active: 'reports' }) %>
+  <main class="content">
+    <%- include('../template/topbar') %>
+    <%- include('../template/messages') %>
+
+    <%- include('../template/reportbar', { reportKey: 'sales', reportTitle: 'Sales report', reportSubtitle: rangeText + (typeof productName !== 'undefined' && productName ? ' · ' + productName : ''), exportHref: '/reports/sales?' + query + (typeof productId !== 'undefined' && productId ? '&product=' + productId : '') }) %>
+
+    <% const onlyProduct = typeof productId !== 'undefined' && productId ? productId : ''; %>
+    <!-- Filters for this report (the tabs above switch reports) -->
+    <section class="filter-bar no-print" aria-label="Filter this report">
+      <div class="filter-group">
+        <span class="filter-label">Period</span>
+        <nav class="pills" aria-label="Quick ranges">
+          <% ranges.forEach(function(r) { %>
+            <a href="/reports/sales?range=<%= r.key %><%= onlyProduct ? '&product=' + onlyProduct : '' %>" class="<%= rangeKey === r.key ? 'active' : '' %>"<% if (rangeKey === r.key) { %> aria-current="page"<% } %>><%= r.label %></a>
+          <% }); %>
+        </nav>
+        <form class="filter-dates" method="GET" action="/reports/sales">
+          <% if (onlyProduct) { %><input type="hidden" name="product" value="<%= onlyProduct %>"><% } %>
+          <label for="from">From</label>
+          <input type="date" id="from" name="from" class="form-control form-control-sm" value="<%= from %>" required>
+          <label for="to">To</label>
+          <input type="date" id="to" name="to" class="form-control form-control-sm" value="<%= to %>" required>
+          <button type="submit" class="btn btn-sm <%= rangeKey === 'custom' ? 'btn-primary' : 'btn-outline-secondary' %>">Show</button>
+        </form>
+      </div>
+      <% if (onlyProduct) { %>
+        <div class="filter-group">
+          <span class="filter-label">Product</span>
+          <span class="filter-chip"><%= productName %> <a href="/reports/sales?from=<%= from %>&to=<%= to %>" aria-label="Show all products">✕</a></span>
+          <a href="/reports/sales?from=<%= from %>&to=<%= to %>" class="filter-clear">Show all products</a>
+        </div>
+      <% } %>
+    </section>
+
+    <% if (s) { %>
+    <section class="stat-row" aria-label="Summary">
+      <div class="stat"><span class="stat-label">Total sales</span><strong><%= fmt.money(s.revenue) %></strong><span class="stat-sub"><%= fmt.number(s.sales) %> <%= s.sales === 1 ? 'sale' : 'sales' %></span></div>
+      <div class="stat"><span class="stat-label">Units sold</span><strong><%= fmt.number(s.units) %></strong><span class="stat-sub">average sale <%= fmt.money(s.average_sale) %></span></div>
+      <% if (isMgr) { %>
+        <div class="stat"><span class="stat-label">Cost of goods sold</span><strong><%= fmt.money(s.cost) %></strong><span class="stat-sub">at current cost</span></div>
+        <div class="stat"><span class="stat-label">Gross profit</span><strong class="<%= s.profit < 0 ? 'neg' : '' %>"><%= fmt.money(s.profit) %></strong><span class="stat-sub"><%= pct(s.margin) %> margin</span></div>
+      <% } %>
+    </section>
+    <% } %>
+
+    <% if (!dataAvailable) { %>
+      <section class="panel"><p class="empty-cell" style="padding:2rem;text-align:center;margin:0">The report is unavailable. Check the message above.</p></section>
+    <% } else if (!sales.length) { %>
+      <section class="panel"><p style="padding:2rem;text-align:center;margin:0" class="empty">No sales between <%= rangeText %>.</p></section>
+    <% } else { %>
+
+    <div class="report-grid">
+      <section class="panel">
+        <div class="panel-bar"><strong>By product</strong></div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <caption class="visually-hidden">Sales by product</caption>
+            <thead><tr><th scope="col">Product</th><th scope="col">Category</th><th scope="col" class="num">Units sold</th><th scope="col" class="num">Total sales</th><% if (isMgr) { %><th scope="col" class="num">Profit</th><% } %></tr></thead>
+            <tbody>
+              <% byProduct.forEach(function(r) { %>
+                <tr><td><strong><%= r.product %></strong></td><td><%= r.category %></td><td class="num"><%= fmt.number(r.units) %></td><td class="num"><%= fmt.money(r.revenue) %></td><% if (isMgr) { %><td class="num <%= r.profit < 0 ? 'neg' : '' %>"><%= fmt.money(r.profit) %></td><% } %></tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-bar"><strong>By category</strong></div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <caption class="visually-hidden">Sales by category</caption>
+            <thead><tr><th scope="col">Category</th><th scope="col" class="num">Units sold</th><th scope="col" class="num">Total sales</th><th scope="col" class="num">Share of sales</th></tr></thead>
+            <tbody>
+              <% byCategory.forEach(function(r) { %>
+                <tr><td><strong><%= r.category %></strong></td><td class="num"><%= fmt.number(r.units) %></td><td class="num"><%= fmt.money(r.revenue) %></td><td class="num"><%= s && s.revenue ? Math.round(r.revenue / s.revenue * 100) + '%' : '–' %></td></tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel report-section">
+      <div class="panel-bar"><strong>By day</strong></div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <caption class="visually-hidden">Sales by day</caption>
+          <thead><tr><th scope="col">Date</th><th scope="col" class="num">Number of sales</th><th scope="col" class="num">Units sold</th><th scope="col" class="num">Total sales</th></tr></thead>
+          <tbody>
+            <% byDay.forEach(function(r) { %>
+              <tr><td><%= fmt.date(r.date) %></td><td class="num"><%= fmt.number(r.sales) %></td><td class="num"><%= fmt.number(r.units) %></td><td class="num"><%= fmt.money(r.revenue) %></td></tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel report-section">
+      <div class="panel-bar"><strong>Every sale</strong> · <%= fmt.number(sales.length) %> · one row per sale: units sold × unit price = that sale's total</div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <caption class="visually-hidden">Every sale in the range</caption>
+          <thead><tr><th scope="col">Date</th><th scope="col">Order #</th><th scope="col">Product</th><th scope="col">Size / color</th><th scope="col" class="num">Units</th><th scope="col" class="num">Unit price</th><th scope="col" class="num">Sale total</th><% if (isMgr) { %><th scope="col" class="num">Profit</th><% } %><th scope="col">Recorded by</th></tr></thead>
+          <tbody>
+            <% sales.forEach(function(r) { %>
+              <tr><td><%= fmt.date(r.date) %></td><td>#<%= r.invoice_id %></td><td><strong><%= r.product %></strong></td><td><%= r.size %> / <%= r.color %></td><td class="num"><%= fmt.number(r.units) %></td><td class="num"><%= fmt.money(r.price) %></td><td class="num"><%= fmt.money(r.revenue) %></td><% if (isMgr) { %><td class="num <%= r.profit < 0 ? 'neg' : '' %>"><%= fmt.money(r.profit) %></td><% } %><td><%= r.employee %></td></tr>
+            <% }); %>
+          </tbody>
+          <tfoot>
+            <tr><th scope="row" colspan="4">Total</th><td class="num"><strong><%= fmt.number(s.units) %></strong></td><td></td><td class="num"><strong><%= fmt.money(s.revenue) %></strong></td><% if (isMgr) { %><td class="num"><strong><%= fmt.money(s.profit) %></strong></td><% } %><td></td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+    <% } %>
+    <p class="empty report-note">Counts Sale orders only (not restocks or adjustments). Amounts use each item's current price<%= isMgr ? ' and cost' : '' %>, because the database doesn't store the price at the time of the sale.<% if (!isMgr) { %> Cost and profit are shown to managers only.<% } %></p>
+
+    <%- include('../template/footer') %>
+  </main>
+</div>
+<%- include('../template/scripts') %>
+</body>
+</html>

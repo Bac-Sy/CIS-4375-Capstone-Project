@@ -24,29 +24,51 @@ function buildDonut(items) {
   return { total, segments };
 }
 
-// points: [{ date, total_units }]. Needs at least two days of history to draw a line.
-function buildTrend(points) {
-  if (!points || points.length < 2) return null;
-
-  const W = 320, H = 140, PAD = 14;
-  const values = points.map((p) => Number(p.total_units));
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-
-  const coords = values.map((v, i) => {
-    const x = (i * W) / (values.length - 1);
-    const y = H - PAD - ((v - min) / range) * (H - PAD * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+// Stock in vs. out (Dashboard): weeks = [{ start: 'YYYY-MM-DD', sold, restocked }] from Flask /dashboard.
+// Returns bar geometry for an SVG with one y-axis, or null when there are no weeks.
+// Colors were checked to stay distinguishable for color-blind viewers (blue vs. teal).
+const FLOW_COLORS = { sold: '#2b2fd6', restocked: '#1a9e8f' };
+function buildFlow(weeks) {
+  if (!Array.isArray(weeks) || !weeks.length) return null;
+  const W = 440, H = 190, LEFT = 34, BOTTOM = 26, TOP = 12;
+  const plotH = H - BOTTOM - TOP;
+  const rows = weeks.map((w) => ({
+    start: String(w.start || ''),
+    sold: Math.max(0, Number(w.sold) || 0),
+    restocked: Math.max(0, Number(w.restocked) || 0)
+  }));
+  const biggest = Math.max(...rows.map((r) => Math.max(r.sold, r.restocked)), 0);
+  // A round top value (4, 10, 20, 50, 100…) so the 3 gridlines get tidy labels.
+  const nice = [4, 10, 20, 30, 50, 100, 200, 300, 500, 1000, 2000, 5000, 10000];
+  const top = nice.find((n) => n >= biggest) || Math.ceil(biggest / 1000) * 1000;
+  const y = (v) => TOP + plotH - (v / top) * plotH;
+  const group = (W - LEFT) / rows.length;
+  const barW = Math.min(26, group / 3);
+  const label = (iso) => {
+    const [yy, mm, dd] = iso.split('-').map(Number);
+    return new Date(yy, (mm || 1) - 1, dd || 1).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  const bars = [];
+  rows.forEach((r, i) => {
+    const center = LEFT + group * i + group / 2;
+    [['sold', center - barW - 1], ['restocked', center + 1]].forEach(([kind, x]) => {
+      const value = r[kind];
+      if (value <= 0) return;
+      const yTop = y(value), base = TOP + plotH, rad = Math.min(4, base - yTop);
+      bars.push({
+        kind, value, week: label(r.start), color: FLOW_COLORS[kind],
+        // rounded top corners, square at the baseline
+        d: `M${x.toFixed(1)},${base} V${(yTop + rad).toFixed(1)} Q${x.toFixed(1)},${yTop.toFixed(1)} ${(x + rad).toFixed(1)},${yTop.toFixed(1)} ` +
+           `H${(x + barW - rad).toFixed(1)} Q${(x + barW).toFixed(1)},${yTop.toFixed(1)} ${(x + barW).toFixed(1)},${(yTop + rad).toFixed(1)} V${base} Z`
+      });
+    });
   });
-
-  const line = 'M' + coords.join(' L');
+  const totals = rows.reduce((t, r) => ({ sold: t.sold + r.sold, restocked: t.restocked + r.restocked }), { sold: 0, restocked: 0 });
   return {
-    line,
-    area: `${line} L${W},${H} L0,${H} Z`,
-    first: points[0],
-    last: points[points.length - 1]
+    width: W, height: H, left: LEFT, colors: FLOW_COLORS, bars, totals,
+    gridlines: [0, top / 2, top].map((v) => ({ value: v, y: y(v).toFixed(1) })),
+    labels: rows.map((r, i) => ({ text: label(r.start), x: (LEFT + group * i + group / 2).toFixed(1), y: H - 6 }))
   };
 }
 
-module.exports = { buildDonut, buildTrend };
+module.exports = { buildDonut, buildFlow };
