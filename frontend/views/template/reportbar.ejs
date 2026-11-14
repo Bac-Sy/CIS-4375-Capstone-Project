@@ -1,8 +1,10 @@
 <%
-  // Shared top of every report page: report tabs, plus Print / Save as PDF and Download for Excel.
-  // Include with: include('../template/reportbar', { reportKey: 'sales', csvHref: '/reports/sales?...&format=csv', reportTitle: 'Sales report', reportSubtitle: '…' })
+  // Shared top of every report page: report tabs, plus Preview PDF and Download Excel.
+  // Include with: include('../template/reportbar', { reportKey: 'sales', exportHref: '/reports/sales?from=…&to=…', reportTitle: 'Sales report', reportSubtitle: '…' })
+  // exportHref is the report's address with its filters; format=pdf / format=xlsx are added here.
   const barKey = typeof reportKey !== 'undefined' ? reportKey : '';
-  const barCsv = typeof csvHref !== 'undefined' ? csvHref : '';
+  const barExport = typeof exportHref !== 'undefined' ? exportHref : '';
+  const withFormat = f => barExport + (barExport.includes('?') ? (/[?&]$/.test(barExport) ? '' : '&') : '?') + 'format=' + f;
   const barTitle = typeof reportTitle !== 'undefined' ? reportTitle : 'Report';
   const barSubtitle = typeof reportSubtitle !== 'undefined' ? reportSubtitle : '';
   const reportTabs = [['sales', 'Sales report', '/reports/sales'], ['inventory', 'Inventory report', '/reports/inventory'], ['best', 'Best sellers', '/reports/best-sellers']];
@@ -13,10 +15,13 @@
     <h1><%= barTitle %></h1>
     <% if (barSubtitle) { %><p class="page-sub"><%= barSubtitle %></p><% } %>
   </div>
+  <% if (barExport) { %>
   <div class="report-actions no-print">
-    <button type="button" class="btn btn-outline-secondary" onclick="window.print()">Print / Save as PDF</button>
-    <% if (barCsv) { %><a class="scc-btn" href="<%= barCsv %>">Download for Excel (CSV)</a><% } %>
+    <button type="button" class="btn btn-outline-secondary" data-pdf-preview="<%= withFormat('pdf') %>"
+            data-pdf-title="<%= barTitle %>" data-pdf-subtitle="<%= barSubtitle %>">Preview PDF</button>
+    <a class="scc-btn" href="<%= withFormat('xlsx') %>">Download Excel</a>
   </div>
+  <% } %>
 </header>
 <nav class="tabs no-print" aria-label="Reports">
   <% reportTabs.forEach(function(t) { %>
@@ -24,4 +29,4 @@
   <% }); %>
 </nav>
 <% const printedOn = new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); %>
-<p class="print-only report-print-line">Space City Couture · <%= barTitle %><%= barSubtitle ? ' · ' + barSubtitle : '' %> · printed <%= printedOn %></p>
+<p class="print-only report-print-line">Space City Couture · <%= barTitle %><%= barSubtitle ? ' · ' + barSubtitle : '' %> · made <%= printedOn %></p>

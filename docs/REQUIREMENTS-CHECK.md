@@ -32,7 +32,7 @@ Checked on November 13, 2026, against the `bianca-redesign` branch (PR #18), on 
 | **R-09** | Stocked vs. dropshipped | — | Out of scope |
 | **R-10** | **Inventory summary report** | **Reports → Inventory report**: every item with category, supplier, location, stock, status and price; managers also see cost and stock value (at cost and at price) with totals; a low and out of stock view | Met |
 | | **Sales report** | **Reports → Sales report** for any dates (this month, last month, last 30 days, this year or custom): sales, units, number of sales, average sale; managers also see cost of goods and gross profit; by product, by category, by day, and every sale with totals | Met |
-| | Printable and exportable | Every report (including Best sellers) has **Print / Save as PDF** and **Download for Excel (CSV)** | Met |
+| | Printable and exportable | Every report (including Best sellers and Edit history) has **Preview PDF** (a real PDF in a preview window with page thumbnails, zoom, search, **Download PDF** and **Print**) and **Download Excel** (an .xlsx with dates, money and column widths set) | Met |
 | | Dashboard | Sales (last 30 days, by category), recent orders by type, current inventory, low stock, stock in vs. out by week | Met |
 | | Product performance | **Reports → Best sellers** (7 / 30 / 90 days / all time, by product or by size and color) | Met |
 | | RTM note: Fail (dashboard showed $0, UTC dates) | Fixed in PR #10: dates are saved in local time | Retest |

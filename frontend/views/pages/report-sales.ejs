@@ -17,7 +17,7 @@
     <%- include('../template/topbar') %>
     <%- include('../template/messages') %>
 
-    <%- include('../template/reportbar', { reportKey: 'sales', reportTitle: 'Sales report', reportSubtitle: rangeText, csvHref: '/reports/sales?' + query + '&format=csv' }) %>
+    <%- include('../template/reportbar', { reportKey: 'sales', reportTitle: 'Sales report', reportSubtitle: rangeText, exportHref: '/reports/sales?' + query }) %>
 
     <form class="range-form no-print" method="GET" action="/reports/sales" aria-label="Choose the dates">
       <nav class="tabs" aria-label="Quick ranges" style="margin:0">
@@ -36,7 +36,7 @@
 
     <% if (s) { %>
     <section class="stat-row" aria-label="Summary">
-      <div class="stat"><span class="stat-label">Sales</span><strong><%= fmt.money(s.revenue) %></strong><span class="stat-sub"><%= fmt.number(s.sales) %> <%= s.sales === 1 ? 'sale' : 'sales' %></span></div>
+      <div class="stat"><span class="stat-label">Total sales</span><strong><%= fmt.money(s.revenue) %></strong><span class="stat-sub"><%= fmt.number(s.sales) %> <%= s.sales === 1 ? 'sale' : 'sales' %></span></div>
       <div class="stat"><span class="stat-label">Units sold</span><strong><%= fmt.number(s.units) %></strong><span class="stat-sub">average sale <%= fmt.money(s.average_sale) %></span></div>
       <% if (isMgr) { %>
         <div class="stat"><span class="stat-label">Cost of goods sold</span><strong><%= fmt.money(s.cost) %></strong><span class="stat-sub">at current cost</span></div>
@@ -57,7 +57,7 @@
         <div class="table-scroll">
           <table class="data-table">
             <caption class="visually-hidden">Sales by product</caption>
-            <thead><tr><th scope="col">Product</th><th scope="col">Category</th><th scope="col" class="num">Units</th><th scope="col" class="num">Sales</th><% if (isMgr) { %><th scope="col" class="num">Profit</th><% } %></tr></thead>
+            <thead><tr><th scope="col">Product</th><th scope="col">Category</th><th scope="col" class="num">Units sold</th><th scope="col" class="num">Total sales</th><% if (isMgr) { %><th scope="col" class="num">Profit</th><% } %></tr></thead>
             <tbody>
               <% byProduct.forEach(function(r) { %>
                 <tr><td><strong><%= r.product %></strong></td><td><%= r.category %></td><td class="num"><%= fmt.number(r.units) %></td><td class="num"><%= fmt.money(r.revenue) %></td><% if (isMgr) { %><td class="num <%= r.profit < 0 ? 'neg' : '' %>"><%= fmt.money(r.profit) %></td><% } %></tr>
@@ -72,7 +72,7 @@
         <div class="table-scroll">
           <table class="data-table">
             <caption class="visually-hidden">Sales by category</caption>
-            <thead><tr><th scope="col">Category</th><th scope="col" class="num">Units</th><th scope="col" class="num">Sales</th><th scope="col" class="num">Share</th></tr></thead>
+            <thead><tr><th scope="col">Category</th><th scope="col" class="num">Units sold</th><th scope="col" class="num">Total sales</th><th scope="col" class="num">Share of sales</th></tr></thead>
             <tbody>
               <% byCategory.forEach(function(r) { %>
                 <tr><td><strong><%= r.category %></strong></td><td class="num"><%= fmt.number(r.units) %></td><td class="num"><%= fmt.money(r.revenue) %></td><td class="num"><%= s && s.revenue ? Math.round(r.revenue / s.revenue * 100) + '%' : '–' %></td></tr>
@@ -88,7 +88,7 @@
       <div class="table-scroll">
         <table class="data-table">
           <caption class="visually-hidden">Sales by day</caption>
-          <thead><tr><th scope="col">Date</th><th scope="col" class="num">Sales</th><th scope="col" class="num">Units</th><th scope="col" class="num">Amount</th></tr></thead>
+          <thead><tr><th scope="col">Date</th><th scope="col" class="num">Number of sales</th><th scope="col" class="num">Units sold</th><th scope="col" class="num">Total sales</th></tr></thead>
           <tbody>
             <% byDay.forEach(function(r) { %>
               <tr><td><%= fmt.date(r.date) %></td><td class="num"><%= fmt.number(r.sales) %></td><td class="num"><%= fmt.number(r.units) %></td><td class="num"><%= fmt.money(r.revenue) %></td></tr>
@@ -99,11 +99,11 @@
     </section>
 
     <section class="panel report-section">
-      <div class="panel-bar"><strong>Every sale</strong> · <%= fmt.number(sales.length) %></div>
+      <div class="panel-bar"><strong>Every sale</strong> · <%= fmt.number(sales.length) %> · one row per sale: units sold × unit price = that sale's total</div>
       <div class="table-scroll">
         <table class="data-table">
           <caption class="visually-hidden">Every sale in the range</caption>
-          <thead><tr><th scope="col">Date</th><th scope="col">Order #</th><th scope="col">Product</th><th scope="col">Size / color</th><th scope="col" class="num">Units</th><th scope="col" class="num">Price</th><th scope="col" class="num">Amount</th><% if (isMgr) { %><th scope="col" class="num">Profit</th><% } %><th scope="col">Recorded by</th></tr></thead>
+          <thead><tr><th scope="col">Date</th><th scope="col">Order #</th><th scope="col">Product</th><th scope="col">Size / color</th><th scope="col" class="num">Units</th><th scope="col" class="num">Unit price</th><th scope="col" class="num">Sale total</th><% if (isMgr) { %><th scope="col" class="num">Profit</th><% } %><th scope="col">Recorded by</th></tr></thead>
           <tbody>
             <% sales.forEach(function(r) { %>
               <tr><td><%= fmt.date(r.date) %></td><td>#<%= r.invoice_id %></td><td><strong><%= r.product %></strong></td><td><%= r.size %> / <%= r.color %></td><td class="num"><%= fmt.number(r.units) %></td><td class="num"><%= fmt.money(r.price) %></td><td class="num"><%= fmt.money(r.revenue) %></td><% if (isMgr) { %><td class="num <%= r.profit < 0 ? 'neg' : '' %>"><%= fmt.money(r.profit) %></td><% } %><td><%= r.employee %></td></tr>

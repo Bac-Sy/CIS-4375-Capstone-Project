@@ -25,7 +25,7 @@ frontend/
 public/
   css/styles.css      all custom CSS
   main.js             menu, ⋯ menus, Inventory adjust buttons
-  js/                 page scripts (add-variants.js, edit-order.js, record-transaction.js)
+  js/                 page scripts (add-variants.js, edit-order.js, record-transaction.js, pdf-viewer.js: the PDF preview window)
 database/             create_capstone_tables.sql, sample_data.sql
 docs/                 design suggestions and before/after screenshots
 package.json
@@ -144,6 +144,9 @@ It asks for a name, username, email and password, and saves a Manager. After tha
 The low stock threshold (default 5) can be changed by a manager on **Settings**. It's saved in `backend/settings.json`, which is git-ignored; until someone saves one, `LOW_STOCK_THRESHOLD` in the backend `.env` file is used.
 
 Every change made in the app (who, when, before → after) is recorded in `backend/edit_history.jsonl` by `backend/history.py`, and managers see it under **Reports → Edit history**. It's a file rather than a database table, so the database design doesn't change. Both files are git-ignored and live only on the computer that runs the API, so **back them up** along with the database.
+
+### Report PDFs and Excel files
+Every report has **Preview PDF** and **Download Excel**. The PDF is made by Microsoft Edge (built into Windows) or Google Chrome running in the background (`puppeteer-core`), from the same page you see, using its print layout. If neither browser is in its usual place, set `PDF_BROWSER` in the frontend `.env` file to the browser's full path. The preview window uses pdf.js (`/vendor/pdfjs`, from `node_modules`), and the Excel files are made with `exceljs`.
 
 ### Running the tests
 These run offline (no database or servers needed), from the project folder:

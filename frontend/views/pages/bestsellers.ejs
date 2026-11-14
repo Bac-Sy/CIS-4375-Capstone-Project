@@ -15,7 +15,7 @@
                 <% const periodLabel = (periods.find(p => p.days === days) || {}).label || ''; %>
                 <%- include('../template/reportbar', { reportKey: 'best', reportTitle: 'Best sellers',
                      reportSubtitle: periodLabel + (view === 'item' ? ' · by size and color' : ' · by product'),
-                     csvHref: '/reports/best-sellers?days=' + days + '&view=' + view + '&format=csv' }); %>
+                     exportHref: '/reports/best-sellers?days=' + days + '&view=' + view }); %>
 
                 <!-- Time period. Keeps the current view (product or item) when switching. -->
                 <nav class="tabs no-print" aria-label="Report period">
@@ -50,8 +50,8 @@
                             <th scope="col">Category</th>
                           <% } %>
                           <th scope="col" class="num">Units sold</th>
-                          <th scope="col" class="num">Sales</th>
-                          <th scope="col" class="num">Share of units</th>
+                          <th scope="col" class="num">Total sales</th>
+                          <th scope="col" class="num">Share of units sold</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -79,7 +79,7 @@
                     </table>
                   </div>
                 </section>
-                <p class="empty">Counts Sale invoices only. Sales are valued at each item's current price. Items with no sales in this period are listed at the bottom.</p>
+                <p class="empty report-note">Counts sales only (not restocks or adjustments). Total sales = units sold × each item's current price. Items with no sales in this period are listed at the bottom, without a rank.</p>
 
                 <%- include('../template/footer'); %>
             </main>

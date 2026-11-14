@@ -25,7 +25,7 @@
     <%- include('../template/topbar') %>
     <%- include('../template/messages') %>
 
-    <%- include('../template/reportbar', { reportKey: 'history', reportTitle: 'Edit history', reportSubtitle: subtitle, csvHref: '/reports/history?' + qs({ format: 'csv' }) }) %>
+    <%- include('../template/reportbar', { reportKey: 'history', reportTitle: 'Edit history', reportSubtitle: subtitle, exportHref: '/reports/history?' + qs() }) %>
 
     <form class="range-form no-print" method="GET" action="/reports/history" aria-label="Filter the history">
       <div class="range-dates">

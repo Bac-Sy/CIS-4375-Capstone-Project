@@ -43,6 +43,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// pdf.js for the PDF preview window (public/js/pdf-viewer.js), served from node_modules like Client Tracker does.
+// Registered before public/ (frontend/tests/check_routes.js expects public/ to be the last static folder).
+app.use('/vendor/pdfjs', express.static(path.join(__dirname, '..', 'node_modules', 'pdfjs-dist', 'build')));
+
 // The merged project keeps assets in root/public/ alongside frontend/.
 const publicDir = [path.join(__dirname, '..', 'public'), path.join(__dirname, 'public')]
   .find(dir => fs.existsSync(path.join(dir, 'css', 'styles.css')));
@@ -556,22 +560,24 @@ app.get('/reports/best-sellers', pageAccess, async (req, res) => {
     const reply = await apiRequest('GET', '/report/best/sellers', { query: { days }, timeoutMs: 30000 });
     const byProduct = arrayData(reply?.by_product);
     const byItem = arrayData(reply?.by_item);
-    if (req.query.format === 'csv') {
-      const period = reportPeriods.find(p => p.days === days).label;
-      return view === 'item'
-        ? sendCsv(res, `best-sellers-by-item-${days || 'all'}-days.csv`, ['Rank', 'Product', 'Size', 'Color', 'Units sold', 'Sales', 'Period'],
-            byItem.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Size, r.Color, r.Units_Sold, Number(r.Revenue).toFixed(2), period]))
-        : sendCsv(res, `best-sellers-by-product-${days || 'all'}-days.csv`, ['Rank', 'Product', 'Category', 'Units sold', 'Sales', 'Period'],
-            byProduct.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Category, r.Units_Sold, Number(r.Revenue).toFixed(2), period]));
-    }
-    return page(req, res, 'bestsellers', {
-      ...fallback,
-      byProduct,
-      byItem,
-      totalUnits: Number(reply?.total_units) || 0,
-      totalRevenue: Number(reply?.total_revenue) || 0,
-      dataAvailable: true
-    });
+    const period = reportPeriods.find(p => p.days === days).label;
+    const values = {
+      ...fallback, byProduct, byItem,
+      totalUnits: Number(reply?.total_units) || 0, totalRevenue: Number(reply?.total_revenue) || 0, dataAvailable: true
+    };
+    const name = `best-sellers-by-${view}-${days ? days + '-days' : 'all-time'}`;
+    return reportOutput(req, res, 'bestsellers', values, { filename: name, title: `Best sellers · ${period}` }, () =>
+      view === 'item'
+        ? sendExcel(res, name, 'Best sellers', [
+            { header: 'Rank', type: 'int' }, { header: 'Product' }, { header: 'Size' }, { header: 'Color' },
+            { header: 'Units sold', type: 'int' }, { header: 'Total sales', type: 'money' }],
+            byItem.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Size, r.Color, r.Units_Sold, r.Revenue]),
+            `Space City Couture · Best sellers by size and color · ${period}`)
+        : sendExcel(res, name, 'Best sellers', [
+            { header: 'Rank', type: 'int' }, { header: 'Product' }, { header: 'Category' },
+            { header: 'Units sold', type: 'int' }, { header: 'Total sales', type: 'money' }],
+            byProduct.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Category, r.Units_Sold, r.Revenue]),
+            `Space City Couture · Best sellers by product · ${period}`));
   } catch (err) {
     return page(req, res, 'bestsellers', {
       ...fallback, message: apiError(err, 'The best sellers report is unavailable.')
@@ -579,23 +585,123 @@ app.get('/reports/best-sellers', pageAccess, async (req, res) => {
   }
 });
 
-// REPORTS (R-10): an inventory report and a sales report, each printable (Print / Save as PDF)
-// and downloadable for Excel (?format=csv). Cost, stock value and profit are shown to managers only.
+// REPORTS (R-10): an inventory report and a sales report, plus Best sellers and Edit history. Each one has
+// "Preview PDF" (a real PDF shown in a preview window, public/js/pdf-viewer.js) and "Download Excel" (.xlsx).
+// Cost, stock value and profit are shown to managers only.
 function isManagerReq(req) {
   return String(req.session.user?.role || '').toLowerCase() === 'manager';
 }
-// CSV that Excel opens correctly: UTF-8 with a BOM, every cell quoted, and cells that start with
-// = + - @ prefixed with ' so a product name can't run as a spreadsheet formula.
-function csvCell(value) {
-  let text = value === null || value === undefined ? '' : String(value);
-  if (/^[=+\-@\t\r]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text)) text = "'" + text;
-  return '"' + text.replace(/"/g, '""') + '"';
+
+// ---- Excel downloads: a real .xlsx (column widths, dates as dates, money as $, bold header) ----
+// columns: [{ header, type: 'text' | 'int' | 'money' | 'date' | 'datetime', width }]; rows: arrays in the same order.
+async function sendExcel(res, filename, sheetName, columns, rows, titleLine) {
+  const ExcelJS = require('exceljs');
+  const book = new ExcelJS.Workbook();
+  book.creator = 'Space City Couture';
+  const sheet = book.addWorksheet(sheetName.slice(0, 31), { views: [{ state: 'frozen', ySplit: titleLine ? 3 : 1 }] });
+  const toValue = (value, type) => {
+    if (value === null || value === undefined || value === '') return null;
+    if (type === 'int' || type === 'money') { const n = Number(value); return Number.isFinite(n) ? n : String(value); }
+    if (type === 'date') {
+      const [y, m, d] = String(value).slice(0, 10).split('-').map(Number);
+      return y ? new Date(Date.UTC(y, m - 1, d)) : String(value);
+    }
+    if (type === 'datetime') {
+      // stored as local time "YYYY-MM-DDTHH:MM:SS"; written as the same wall-clock time
+      const t = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+      return t ? new Date(Date.UTC(+t[1], +t[2] - 1, +t[3], +t[4], +t[5], +(t[6] || 0))) : String(value);
+    }
+    return String(value);
+  };
+  if (titleLine) {
+    sheet.addRow([titleLine]).font = { bold: true, size: 13 };
+    sheet.addRow([]);
+  }
+  const header = sheet.addRow(columns.map(c => c.header));
+  header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  header.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000AA' } }; });
+  for (const row of rows) sheet.addRow(columns.map((c, i) => toValue(row[i], c.type)));
+  columns.forEach((c, i) => {
+    const col = sheet.getColumn(i + 1);
+    const longest = Math.max(String(c.header).length, ...rows.map(r => String(r[i] ?? '').length));
+    const minimum = { date: 12, datetime: 20, money: 13 }[c.type] || 8;
+    col.width = c.width || Math.min(48, Math.max(minimum, longest + 3));
+    if (c.type === 'money') col.numFmt = '$#,##0.00;[Red]-$#,##0.00';
+    if (c.type === 'date') col.numFmt = 'm/d/yyyy';
+    if (c.type === 'datetime') col.numFmt = 'm/d/yyyy h:mm AM/PM';
+    if (c.type === 'int') col.numFmt = '#,##0';
+  });
+  sheet.autoFilter = { from: { row: header.number, column: 1 }, to: { row: header.number, column: columns.length } };
+  const buffer = await book.xlsx.writeBuffer();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\w.-]/g, '_')}.xlsx"`);
+  return res.send(Buffer.from(buffer));
 }
-function sendCsv(res, filename, headers, rows) {
-  const body = [headers, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\w.-]/g, '_')}"`);
-  return res.send('﻿' + body + '\r\n');
+
+// ---- PDFs: the report page is printed to PDF by Microsoft Edge (or Chrome) running in the background ----
+// It uses the print layout in styles.css, so the PDF matches what the browser would print.
+const PDF_BROWSERS = [
+  process.env.PDF_BROWSER,
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/microsoft-edge', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'
+].filter(Boolean);
+let pdfBrowserPromise = null;
+async function pdfBrowser() {
+  if (pdfBrowserPromise) {
+    const open = await pdfBrowserPromise.catch(() => null);
+    if (open && open.connected) return open;
+    pdfBrowserPromise = null;
+  }
+  const executablePath = PDF_BROWSERS.find(p => fs.existsSync(p));
+  if (!executablePath) {
+    throw new Error('Making a PDF needs Microsoft Edge or Google Chrome installed (or PDF_BROWSER set to one in .env).');
+  }
+  const puppeteer = require('puppeteer-core');
+  pdfBrowserPromise = puppeteer.launch({ executablePath, headless: true, args: ['--disable-gpu', '--no-first-run'] });
+  pdfBrowserPromise.catch(() => { pdfBrowserPromise = null; });
+  return pdfBrowserPromise;
+}
+async function sendPdf(req, res, view, values, { filename, title, landscape = false }) {
+  const html = await new Promise((resolve, reject) =>
+    app.render(`pages/${view}`, { ...res.locals, ...values, pdfMode: true }, (err, out) => err ? reject(err) : resolve(out)));
+  const browser = await pdfBrowser();
+  const tab = await browser.newPage();
+  try {
+    // <base> lets the page load its CSS and logo from this server
+    await tab.setContent(html.replace('<head>', `<head><base href="http://127.0.0.1:${PORT}/">`), { waitUntil: 'load', timeout: 20000 });
+    await tab.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
+    await tab.emulateMediaType('print');
+    const safeTitle = String(title).replace(/[<>&"]/g, '');
+    const pdf = await tab.pdf({
+      format: 'Letter', landscape, printBackground: true,
+      margin: { top: '12mm', bottom: '16mm', left: '10mm', right: '10mm' },
+      displayHeaderFooter: true, headerTemplate: '<span></span>',
+      footerTemplate: `<div style="width:100%;font-size:8px;color:#666;padding:0 10mm;display:flex;justify-content:space-between;font-family:Arial,sans-serif">
+        <span>Space City Couture · ${safeTitle}</span><span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${filename.replace(/[^\w.-]/g, '_')}.pdf"`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(Buffer.from(pdf));
+  } finally {
+    await tab.close().catch(() => {});
+  }
+}
+// A report route answers ?format=pdf with a PDF, ?format=xlsx with Excel, and otherwise shows the page.
+async function reportOutput(req, res, view, values, pdfOptions, excel) {
+  try {
+    if (req.query.format === 'pdf') return await sendPdf(req, res, view, values, pdfOptions);
+    if ((req.query.format === 'xlsx' || req.query.format === 'csv') && excel) return await excel();
+  } catch (err) {
+    console.error('Report export failed:', err.message);
+    return res.status(500).type('text/plain').send(`The ${req.query.format === 'pdf' ? 'PDF' : 'Excel file'} could not be made. ${err.message}`);
+  }
+  return page(req, res, view, values);
 }
 app.get('/reports', pageAccess, (req, res) => res.redirect('/reports/sales'));
 
@@ -607,16 +713,23 @@ app.get('/reports/inventory', pageAccess, async (req, res) => {
     const reply = await apiRequest('GET', '/report/inventory', { timeoutMs: 30000 });
     let rows = arrayData(reply?.rows);
     if (lowOnly) rows = rows.filter(r => r.status);
-    if (req.query.format === 'csv') {
-      const headers = ['Product', 'Category', 'Supplier', 'Size', 'Color', 'Location', 'In stock', 'Status', 'Available']
-        .concat(manager ? ['Cost', 'Price', 'Stock value at cost', 'Stock value at price'] : ['Price']);
-      return sendCsv(res, `inventory-report-${lowOnly ? 'low-stock-' : ''}${localToday()}.csv`, headers, rows.map(r =>
-        [r.product, r.category, r.supplier || '', r.size, r.color, r.location || '', r.quantity, r.status || 'OK', r.available ? 'Yes' : 'No']
-          .concat(manager ? [r.cost.toFixed(2), r.price.toFixed(2), r.value_cost.toFixed(2), r.value_retail.toFixed(2)] : [Number(r.price).toFixed(2)])));
-    }
-    return page(req, res, 'report-inventory', {
+    const generated = reply?.generated || localToday();
+    const values = {
       ...fallback, rows, totals: reply?.totals || null,
-      threshold: Number(reply?.low_stock_threshold ?? 5), generated: reply?.generated || localToday(), dataAvailable: true
+      threshold: Number(reply?.low_stock_threshold ?? 5), generated, dataAvailable: true
+    };
+    const name = `inventory-report-${lowOnly ? 'low-stock-' : ''}${generated}`;
+    const title = `${lowOnly ? 'Inventory report: low stock' : 'Inventory report'} · ${fmt.date(generated)}`;
+    return reportOutput(req, res, 'report-inventory', values, { filename: name, title, landscape: true }, () => {
+      const columns = [{ header: 'Product' }, { header: 'Category' }, { header: 'Supplier' }, { header: 'Size' }, { header: 'Color' },
+        { header: 'Location' }, { header: 'In stock', type: 'int' }, { header: 'Status' }, { header: 'Available' }]
+        .concat(manager
+          ? [{ header: 'Cost', type: 'money' }, { header: 'Price', type: 'money' }, { header: 'Stock value at cost', type: 'money' }, { header: 'Stock value at price', type: 'money' }]
+          : [{ header: 'Price', type: 'money' }]);
+      return sendExcel(res, name, 'Inventory', columns, rows.map(r =>
+        [r.product, r.category, r.supplier || '', r.size, r.color, r.location || '', r.quantity, r.status || 'OK', r.available ? 'Yes' : 'No']
+          .concat(manager ? [r.cost, r.price, r.value_cost, r.value_retail] : [r.price])),
+        `Space City Couture · ${title}`);
     });
   } catch (err) {
     return page(req, res, 'report-inventory', { ...fallback, message: apiError(err, 'The inventory report is unavailable.') });
@@ -646,26 +759,33 @@ app.get('/reports/history', managerOnly, async (req, res) => {
   const person = typeof req.query.employee === 'string' && /^\d+$/.test(req.query.employee) ? req.query.employee : '';
   const from = validDate(req.query.from) ? String(req.query.from) : '';
   const to = validDate(req.query.to) ? String(req.query.to) : '';
-  const pageNumber = /^[1-9]\d{0,5}$/.test(String(req.query.page || '')) ? Number(req.query.page) : 1;
+  const exporting = ['pdf', 'xlsx', 'csv'].includes(req.query.format);
+  // the PDF and Excel file hold every matching change; the page shows 100 at a time
+  const pageNumber = !exporting && /^[1-9]\d{0,5}$/.test(String(req.query.page || '')) ? Number(req.query.page) : 1;
   const filters = { area, employee: person, from, to };
   const fallback = { ...filters, pageNumber, entries: [], total: 0, hasMore: false, areas: [], people: [], dataAvailable: false };
   try {
-    if (req.query.format === 'csv') {
-      const reply = await apiRequest('GET', '/history', { query: { ...filters, limit: 1000 }, timeoutMs: 30000 });
+    const reply = await apiRequest('GET', '/history', {
+      query: { ...filters, limit: exporting ? 1000 : 100, offset: (pageNumber - 1) * 100 }, timeoutMs: 30000
+    });
+    const entries = arrayData(reply?.entries);
+    const values = {
+      ...fallback, entries, total: Number(reply?.total) || 0, hasMore: exporting ? false : Boolean(reply?.has_more),
+      areas: arrayData(reply?.areas), people: arrayData(reply?.people), dataAvailable: true
+    };
+    const name = `edit-history${from ? '-from-' + from : ''}${to ? '-to-' + to : ''}`;
+    return reportOutput(req, res, 'report-history', values, { filename: name, title: `Edit history${area ? ' · ' + area : ''}` }, () => {
       const rows = [];
-      for (const e of arrayData(reply?.entries)) {
+      for (const e of entries) {
         const changes = arrayData(e.changes);
-        const base = [String(e.time || '').replace('T', ' '), e.employee, e.area, e.action, e.kind, e.target];
+        const base = [e.time, e.employee, e.area, e.action, e.kind, e.target];
         if (!changes.length) rows.push([...base, '', '', '']);
         for (const c of changes) rows.push([...base, c.field, c.from, c.to]);
       }
-      return sendCsv(res, `edit-history${from ? '-from-' + from : ''}${to ? '-to-' + to : ''}.csv`,
-        ['When', 'Who', 'Area', 'Action', 'What', 'Name', 'Field', 'Before', 'After'], rows);
-    }
-    const reply = await apiRequest('GET', '/history', { query: { ...filters, limit: 100, offset: (pageNumber - 1) * 100 }, timeoutMs: 30000 });
-    return page(req, res, 'report-history', {
-      ...fallback, entries: arrayData(reply?.entries), total: Number(reply?.total) || 0, hasMore: Boolean(reply?.has_more),
-      areas: arrayData(reply?.areas), people: arrayData(reply?.people), dataAvailable: true
+      return sendExcel(res, name, 'Edit history', [
+        { header: 'When', type: 'datetime' }, { header: 'Who' }, { header: 'Type' }, { header: 'Action' }, { header: 'What' },
+        { header: 'Name' }, { header: 'Field' }, { header: 'Before' }, { header: 'After' }], rows,
+        `Space City Couture · Edit history${area ? ' · ' + area : ''}`);
     });
   } catch (err) {
     return page(req, res, 'report-history', { ...fallback, message: apiError(err, 'The edit history is unavailable.') });
@@ -684,17 +804,23 @@ app.get('/reports/sales', pageAccess, async (req, res) => {
   const fallback = { from, to, rangeKey, ranges, manager, summary: null, byProduct: [], byCategory: [], byDay: [], sales: [], generated: localToday(), dataAvailable: false };
   try {
     const reply = await apiRequest('GET', '/report/sales', { query: { from, to }, timeoutMs: 30000 });
-    if (req.query.format === 'csv') {
-      const headers = ['Date', 'Order #', 'Product', 'Category', 'Size', 'Color', 'Units', 'Price', 'Sales']
-        .concat(manager ? ['Cost', 'Profit'] : []).concat(['Recorded by']);
-      return sendCsv(res, `sales-report-${from}-to-${to}.csv`, headers, arrayData(reply?.sales).map(r =>
-        [r.date, r.invoice_id, r.product, r.category, r.size, r.color, r.units, Number(r.price).toFixed(2), Number(r.revenue).toFixed(2)]
-          .concat(manager ? [Number(r.cost_total).toFixed(2), Number(r.profit).toFixed(2)] : []).concat([r.employee])));
-    }
-    return page(req, res, 'report-sales', {
+    const values = {
       ...fallback, summary: reply?.summary || null,
       byProduct: arrayData(reply?.by_product), byCategory: arrayData(reply?.by_category), byDay: arrayData(reply?.by_day),
       sales: arrayData(reply?.sales), generated: reply?.generated || localToday(), dataAvailable: true
+    };
+    const name = `sales-report-${from}-to-${to}`;
+    const title = `Sales report · ${fmt.date(from)} – ${fmt.date(to)}`;
+    return reportOutput(req, res, 'report-sales', values, { filename: name, title }, () => {
+      // One row per sale (order): its units, the price of one item, and that sale's total (units × unit price).
+      const columns = [{ header: 'Date', type: 'date' }, { header: 'Order #', type: 'int' }, { header: 'Product' }, { header: 'Category' },
+        { header: 'Size' }, { header: 'Color' }, { header: 'Units', type: 'int' }, { header: 'Unit price', type: 'money' }, { header: 'Sale total', type: 'money' }]
+        .concat(manager ? [{ header: 'Cost', type: 'money' }, { header: 'Profit', type: 'money' }] : [])
+        .concat([{ header: 'Recorded by' }]);
+      return sendExcel(res, name, 'Sales', columns, values.sales.map(r =>
+        [r.date, r.invoice_id, r.product, r.category, r.size, r.color, r.units, r.price, r.revenue]
+          .concat(manager ? [r.cost_total, r.profit] : []).concat([r.employee])),
+        `Space City Couture · ${title} · one row per sale`);
     });
   } catch (err) {
     return page(req, res, 'report-sales', { ...fallback, message: apiError(err, 'The sales report is unavailable.') });
