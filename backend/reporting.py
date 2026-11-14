@@ -3,6 +3,7 @@
 All queries use bound parameters; tables/columns are from database/create_capstone_tables.sql.
 Endpoints share Flask's token gate installed by security.install_auth.
 """
+import json
 import os
 from datetime import date, timedelta
 from flask import jsonify, request, g
@@ -27,11 +28,48 @@ def register_reporting_routes(app, connect, read_query):
         app.logger.error('Reporting endpoint failed: %s', exc)
         return jsonify({'message': 'Database reporting is unavailable. See Flask logs.'}), 503
 
-    def threshold():
+    # Store settings live in backend/settings.json (created the first time a manager saves one on the
+    # Settings page, and not committed). Until then the threshold comes from LOW_STOCK_THRESHOLD in .env.
+    settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
+
+    def read_settings():
         try:
-            return max(0, min(1000000, int(os.getenv('LOW_STOCK_THRESHOLD', '5'))))
+            with open(settings_path, encoding='utf-8') as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def threshold():
+        saved = read_settings().get('low_stock_threshold')
+        try:
+            value = saved if saved is not None else os.getenv('LOW_STOCK_THRESHOLD', '5')
+            return max(0, min(1000000, int(value)))
         except (ValueError, TypeError):
             return 5
+
+    @app.get('/settings/store')
+    def store_settings():
+        return jsonify({'low_stock_threshold': threshold()})
+
+    @app.put('/settings/store')
+    def save_store_settings():
+        if str(g.employee.get('Role', '')).casefold() != 'manager':
+            return jsonify({'message': 'Only managers can change store settings.'}), 403
+        data = request.get_json(silent=True) or {}
+        try:
+            value = int(data.get('low_stock_threshold'))
+        except (ValueError, TypeError):
+            return jsonify({'message': 'The low stock threshold must be a whole number.'}), 400
+        if value < 0 or value > 1000:
+            return jsonify({'message': 'The low stock threshold must be between 0 and 1000.'}), 400
+        settings = read_settings()
+        settings['low_stock_threshold'] = value
+        temp_path = settings_path + '.tmp'
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2)
+        os.replace(temp_path, settings_path)
+        return jsonify({'message': f'Low stock threshold set to {value}.', 'low_stock_threshold': value})
 
     @app.get('/inventory')
     def inventory_summary():
@@ -141,10 +179,14 @@ def register_reporting_routes(app, connect, read_query):
               AND i.Date >= %s AND i.Date <= %s
             GROUP BY c.Category ORDER BY revenue DESC
         ''', (first_day, date.today()))
-        recent = fetch(ORDER_SELECT + ' ORDER BY i.Date DESC, i.Invoice_ID DESC LIMIT 5')
-        for row in recent:
-            if row.get('date') is not None:
-                row['date'] = str(row['date'])[:10]
+        # The newest 5 of each type, so Adjustments (stock corrections) don't push real sales off the card.
+        recent_by_type = {}
+        for kind in ('Sale', 'Restock', 'Adjustment'):
+            rows = fetch(ORDER_SELECT + ' WHERE t.Transaction_Type=%s ORDER BY i.Date DESC, i.Invoice_ID DESC LIMIT 5', (kind,))
+            for row in rows:
+                if row.get('date') is not None:
+                    row['date'] = str(row['date'])[:10]
+            recent_by_type[kind] = rows
         low = fetch('''
             SELECT p.Name AS product, s.Size AS size, co.Color AS color,
                    i.Quantity AS quantity
@@ -156,29 +198,32 @@ def register_reporting_routes(app, connect, read_query):
             WHERE i.Quantity <= %s
             ORDER BY i.Quantity, p.Name, v.Variant_ID LIMIT 5
         ''', (threshold(),))
-        total_rows = fetch('SELECT COALESCE(SUM(Quantity),0) AS total FROM Inventory')
-        total = int(total_rows[0]['total'] or 0) if total_rows else 0
-        changes = fetch('''
-            SELECT Date AS date, SUM(Quantity_Change) AS delta
-            FROM Invoice WHERE Date >= %s AND Date <= %s
-            GROUP BY Date ORDER BY Date ASC
-        ''', (first_day, date.today()))
-        delta_by_day = {str(row['date'])[:10]: int(row['delta'] or 0) for row in changes}
-        stock_before_period = total - sum(delta_by_day.values())
-        running = stock_before_period
-        trend = []
-        for day_index in range(days):
-            d = first_day + timedelta(days=day_index)
-            running += delta_by_day.get(d.isoformat(), 0)
-            trend.append({'date': d.isoformat(), 'total_units': running})
+        # Stock in vs. out: units sold and units restocked in each of the last 4 weeks (7-day blocks
+        # ending today). Adjustments are left out: they correct a count, they aren't stock coming in or going out.
+        weeks_start = date.today() - timedelta(days=27)
+        moves = fetch('''
+            SELECT i.Date AS date, t.Transaction_Type AS kind, SUM(i.Quantity_Change) AS qty
+            FROM Invoice i
+            JOIN Transaction_Type t ON t.Transaction_Type_ID = i.Transaction_Type_ID
+            WHERE t.Transaction_Type IN ('Sale', 'Restock') AND i.Date >= %s AND i.Date <= %s
+            GROUP BY i.Date, t.Transaction_Type
+        ''', (weeks_start, date.today()))
+        weeks = [{'start': (weeks_start + timedelta(days=7 * n)).isoformat(), 'sold': 0, 'restocked': 0} for n in range(4)]
+        for row in moves:
+            day = row['date'] if isinstance(row['date'], date) else date.fromisoformat(str(row['date'])[:10])
+            week = weeks[min(3, (day - weeks_start).days // 7)]
+            if row['kind'] == 'Sale':
+                week['sold'] += -int(row['qty'] or 0)
+            else:
+                week['restocked'] += int(row['qty'] or 0)
         sales = sale_agg[0] if sale_agg else {}
         return jsonify({
             'sales': {'revenue': sales.get('revenue') or 0,
                       'units': sales.get('units') or 0,
                       'days': days, 'by_category': by_category},
-            'recent_orders': recent,
+            'recent_orders': recent_by_type['Sale'],
+            'recent_by_type': recent_by_type,
             'low_stock': low,
             'low_stock_threshold': threshold(),
-            'trend': trend,
-            'trend_note': 'Historical stock reconstructed from current inventory and posted invoice changes.'
+            'stock_weeks': weeks
         })

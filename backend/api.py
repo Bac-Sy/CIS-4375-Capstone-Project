@@ -387,6 +387,38 @@ def login():
         }
     }), 200
 
+#Change my password (Settings page). Any signed-in employee can change their OWN password, but only
+#after entering their current one. The account comes from the login token, never from the request body,
+#so nobody can change someone else's password here. Managers reset other people's passwords on Employees.
+@app.route('/change/password', methods=['POST'])
+def changeMyPassword():
+    data = request.get_json(silent=True) or {}
+    currentPassword = str(data.get('Current_Password') or '')
+    newPassword = str(data.get('New_Password') or '')
+    if not currentPassword or not newPassword:
+        return jsonify({'message': 'Enter your current password and a new password.'}), 400
+    if len(newPassword) < 8 or len(newPassword) > 128:
+        return jsonify({'message': 'The new password must be between 8 and 128 characters.'}), 400
+    employeeID = int(g.employee['Employee_ID'])
+    con = get_connection()
+    if con is None:
+        return jsonify({'message': 'Database unavailable.'}), 503
+    try:
+        rows = execute_read_query(con, 'SELECT Password_Hash FROM Employee WHERE Employee_ID=%s', (employeeID,))
+        if not rows:
+            return jsonify({'message': 'Your account could not be found.'}), 404
+        ph = PasswordHasher()
+        try:
+            ph.verify(rows[0]['Password_Hash'], currentPassword)
+        except exceptions.VerificationError:
+            return jsonify({'message': 'Your current password is incorrect.'}), 400
+        error = run_write(con, 'UPDATE Employee SET Password_Hash=%s WHERE Employee_ID=%s', (ph.hash(newPassword), employeeID))
+        if error:
+            return db_error_response(con, error)
+        return jsonify({'message': 'Your password was changed.'}), 200
+    finally:
+        con.close()
+
 #Below is the CRUD for the Invoice table.
 #Read (The api to read a single entry in the Invoice table)
 @app.route('/get/invoice', methods = ['GET'])
@@ -464,64 +496,90 @@ def createInvoice():
     return jsonify({'message' : 'Invoice created and inventory updated.'}), 201
 
 #Update (updates an invoice. The Invoice_ID must be sent in the request body to identify which invoice to change.)
+#Any of these can be changed: Transaction_Type_ID, Quantity_Change, Variant_ID (the item) and Date (YYYY-MM-DD).
+#Changing the quantity or the item moves the stock: the old change is undone on the old item and the new
+#change is applied to the new item. Everything is saved together, or nothing is if a check fails.
 @app.route('/update/invoice', methods=['PUT'])
 def updateInvoice():
-    mycon = get_connection()
-    userinput = request.get_json()
+    userinput = request.get_json(silent=True) or {}
     invoiceID = userinput.get('Invoice_ID')
-    transactionTypeID = userinput.get('Transaction_Type_ID')
-    quantityChange = userinput.get('Quantity_Change') #positive for additions, negative for removals
-
     if not invoiceID:
-        mycon.close()
         return jsonify({'message' : 'Invoice_ID is required.'}), 400
+    try:
+        invoiceID = int(invoiceID)
+        transactionTypeID = int(userinput['Transaction_Type_ID']) if userinput.get('Transaction_Type_ID') else None
+        newVariantID = int(userinput['Variant_ID']) if userinput.get('Variant_ID') else None
+        quantityChange = int(userinput['Quantity_Change']) if userinput.get('Quantity_Change') is not None else None
+        newDate = date.fromisoformat(str(userinput['Date'])) if userinput.get('Date') else None
+    except (ValueError, TypeError):
+        return jsonify({'message' : 'Invoice_ID, Transaction_Type_ID, Variant_ID and Quantity_Change must be whole numbers, and Date must be YYYY-MM-DD.'}), 400
+    if quantityChange == 0:
+        return jsonify({'message' : 'Quantity_Change cannot be 0.'}), 400
+    if newDate is not None and newDate > date.today():
+        return jsonify({'message' : 'The date cannot be in the future.'}), 400
 
-    #pulls the original invoice so the inventory can be corrected by the difference
-    sql = "select Quantity_Change, Variant_ID from Invoice where Invoice_ID = '%s'" % (invoiceID)
-    invoice = execute_read_query(mycon,sql)
-    if not invoice:
+    mycon = get_connection()
+    if mycon is None:
+        return jsonify({'message' : 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = mycon.cursor(dictionary=True)
+        #pulls the original invoice so the inventory can be corrected
+        cursor.execute('SELECT Quantity_Change, Variant_ID FROM Invoice WHERE Invoice_ID=%s FOR UPDATE', (invoiceID,))
+        invoice = cursor.fetchone()
+        if invoice is None:
+            mycon.rollback()
+            return jsonify({'message' : 'Invoice not found. Try a different Invoice_ID.'}), 404
+        oldQuantity = int(invoice['Quantity_Change'])
+        oldVariantID = int(invoice['Variant_ID'])
+        newQuantity = oldQuantity if quantityChange is None else quantityChange
+        variantID = oldVariantID if newVariantID is None else newVariantID
+
+        #checks that the new transaction type exists
+        if transactionTypeID is not None:
+            cursor.execute('SELECT Transaction_Type_ID FROM Transaction_Type WHERE Transaction_Type_ID=%s', (transactionTypeID,))
+            if cursor.fetchone() is None:
+                mycon.rollback()
+                return jsonify({'message' : 'Transaction type does not exist. Try a different transaction type.'}), 404
+
+        #locks the stock rows involved so two edits can't change them at the same time
+        cursor.execute('SELECT Variant_ID, Quantity FROM Inventory WHERE Variant_ID IN (%s, %s) FOR UPDATE', (oldVariantID, variantID))
+        stock = {int(row['Variant_ID']): int(row['Quantity']) for row in cursor.fetchall()}
+        if variantID not in stock or oldVariantID not in stock:
+            mycon.rollback()
+            return jsonify({'message' : 'No inventory record for that variant.'}), 404
+
+        #undo the old change on the old item, then apply the new change to the new item
+        before = dict(stock)
+        stock[oldVariantID] -= oldQuantity
+        stock[variantID] += newQuantity
+        for checkedID in {oldVariantID, variantID}:
+            if stock[checkedID] < 0:
+                mycon.rollback()
+                cursor.execute('SELECT p.Name, s.Size, c.Color FROM Product_Variant v JOIN Product p ON p.Product_ID=v.Product_ID '
+                               'JOIN Size s ON s.Size_ID=v.Size_ID JOIN Color c ON c.Color_ID=v.Color_ID WHERE v.Variant_ID=%s', (checkedID,))
+                item = cursor.fetchone() or {}
+                name = '%s (%s / %s)' % (item.get('Name', 'This item'), item.get('Size', '?'), item.get('Color', '?'))
+                return jsonify({'message' : 'There is not enough stock. %s has %s in stock.' % (name, before[checkedID])}), 400
+
+        #if all checks pass, then the update will be applied to the system.
+        if transactionTypeID is not None:
+            cursor.execute('UPDATE Invoice SET Transaction_Type_ID=%s WHERE Invoice_ID=%s', (transactionTypeID, invoiceID))
+        if newDate is not None:
+            cursor.execute('UPDATE Invoice SET Date=%s WHERE Invoice_ID=%s', (newDate, invoiceID))
+        cursor.execute('UPDATE Invoice SET Quantity_Change=%s, Variant_ID=%s WHERE Invoice_ID=%s', (newQuantity, variantID, invoiceID))
+        for changedID in {oldVariantID, variantID}:
+            cursor.execute('UPDATE Inventory SET Quantity=%s WHERE Variant_ID=%s', (stock[changedID], changedID))
+        mycon.commit()
+        return jsonify({'message' : 'Order updated.'})
+    except Exception:
+        mycon.rollback()
+        app.logger.exception('Invoice update failed')
+        return jsonify({'message' : 'The order could not be updated. Nothing was changed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
         mycon.close()
-        return jsonify({'message' : 'Invoice not found. Try a different Invoice_ID.'}), 404
-
-    oldQuantity = invoice[0]['Quantity_Change']
-    variantID = invoice[0]['Variant_ID']
-
-    #checks that the new transaction type exists
-    if transactionTypeID:
-        sql1 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type_ID = '%s'" % (transactionTypeID)
-        transaction = execute_read_query(mycon,sql1)
-        if not transaction:
-            mycon.close()
-            return jsonify({'message' : 'Transaction type does not exist. Try a different transaction type.'}), 404
-
-    #checks that the new quantity won't take the stock below 0
-    if quantityChange is not None:
-        quantityChange = int(quantityChange)
-        difference = quantityChange - oldQuantity
-        sql2 = "select Quantity from Inventory where Variant_ID = '%s'" % (variantID)
-        stock = execute_read_query(mycon,sql2)
-        if not stock:
-            mycon.close()
-            return jsonify({'message' : 'No inventory record for that variant'}), 404
-        currentStock = stock[0]['Quantity']
-        if currentStock + difference < 0:
-            mycon.close()
-            return jsonify({'message' : 'There is not enough stock to complete this request. %s items are in stock.' % (currentStock)}), 400
-
-    #if all checks passe, then the update will be applied to the system.
-    if transactionTypeID:
-        sql3 = "update Invoice set Transaction_Type_ID = '%s' where Invoice_ID = '%s'" % (transactionTypeID, invoiceID)
-        execute_update_query(mycon,sql3)
-
-    if quantityChange is not None:
-        sql4 = "update Invoice set Quantity_Change = '%s' where Invoice_ID = '%s'" % (quantityChange, invoiceID)
-        execute_update_query(mycon,sql4)
-        #corrects the inventory by the difference between the new and old quantity
-        sql5 = "update Inventory set Quantity = Quantity + %s where Variant_ID = '%s'" % (difference, variantID)
-        execute_update_query(mycon,sql5)
-
-    mycon.close()
-    return jsonify({'message' : 'Invoice updated.'})
 
 #Delete (deletes an invoice and undoes its change to the inventory. The Invoice_ID must be sent in the request body.)
 @app.route('/delete/invoice', methods=['DELETE'])

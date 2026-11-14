@@ -18,3 +18,6 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 .vscode/
+# Store settings saved from the Settings page (low stock threshold)
+backend/settings.json
+backend/settings.json.tmp
