@@ -34,7 +34,7 @@
               <option value="<%= v.variant_id %>" data-supplier="<%= v.supplier || '' %>">
                 <%= v.product %> —
                 <%= v.size %> / <%= v.color %>
-                (<%= v.quantity %> in stock)
+                (<%= v.quantity %> in stock)<%= (v.available === false || v.available === 0 || v.available === '0') ? ' · not available' : '' %>
               </option>
             <% }); %>
           </select>

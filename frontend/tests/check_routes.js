@@ -85,6 +85,32 @@ console.log(`PASS: frontend/server.js registered ${routes.length} GET/POST route
 console.log('PASS: EJS path is frontend/views, static files are root/public, and npm scripts target frontend/server.js');
 console.log('PASS: logged-out stock adjustment denied; non-manager delete denied');
 
+// Reports (R-10) need a login; catalog edits and order edits are manager-only (R-12, R-13).
+const runGuard = (handler, user) => {
+  const out = {};
+  handler({ method: 'GET', session: user ? { user } : {} }, {
+    status(code) { out.code = code; return this; },
+    render(view) { out.view = view; },
+    redirect(url) { out.redirect = url; }
+  }, () => { out.allowed = true; });
+  return out;
+};
+const employee = { id: '2', role: 'Employee' };
+for (const url of ['/reports', '/reports/sales', '/reports/inventory', '/reports/best-sellers']) {
+  const out = runGuard(route('GET', url).handlers[0], null);
+  assert(!out.allowed && (out.redirect === '/login' || out.code === 401), `${url} must require a login`);
+}
+for (const url of ['/products/:id/edit', '/variants/:id/edit', '/suppliers/:id/edit', '/categories/:id/edit', '/locations/:id/edit', '/orders/:id/edit']) {
+  const out = runGuard(route('GET', url).handlers[0], employee);
+  assert(!out.allowed && out.code === 403, `${url} must be manager-only`);
+  const post = runGuard(route('POST', url).handlers[0], employee);
+  assert(!post.allowed && post.code === 403, `POST ${url} must be manager-only`);
+}
+for (const [method, url] of [['POST', '/inventory/:variantId/adjust'], ['GET', '/new/transaction'], ['POST', '/record/transaction'], ['POST', '/settings/password']]) {
+  assert(runGuard(route(method, url).handlers[0], employee).allowed, `employees must be able to use ${method} ${url}`);
+}
+console.log('PASS: reports need a login; catalog and order edits are manager-only; employees can adjust stock, record transactions and change their password');
+
 // Product-creation integration simulation: mock only the Flask HTTP response,
 // exercise the actual Express route handlers and verify the posted JSON.
 async function verifyProductFlow() {

@@ -27,7 +27,9 @@
   const lowStock = stockAvailable
     ? dashboardData.low_stock.filter(item => item && typeof item === 'object') : [];
   const onHand = dashboardData.inventory_totals && typeof dashboardData.inventory_totals === 'object' ? dashboardData.inventory_totals : null;
-  const threshold = Number(dashboardData.low_stock_threshold) > 0
+  // 0 is a valid threshold (only empty items are low), so only fall back to 5 when it's missing.
+  const threshold = dashboardData.low_stock_threshold !== undefined && dashboardData.low_stock_threshold !== null &&
+    Number.isFinite(Number(dashboardData.low_stock_threshold)) && Number(dashboardData.low_stock_threshold) >= 0
     ? Number(dashboardData.low_stock_threshold) : 5;
 
   // Support either values passed separately by Express or values under data.
@@ -204,7 +206,7 @@
                     <span class="meter" role="img" aria-label="<%= quantity %> in stock">
                       <i style="width: <%= pct %>%;"></i>
                     </span>
-                    <span class="tag tag-red"><%= quantity %> left</span>
+                    <span class="tag tag-red"><%= quantity === 0 ? 'Out of stock' : quantity + ' left' %></span>
                   </li>
                 <% }); %>
               </ul>

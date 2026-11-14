@@ -27,6 +27,7 @@
     </nav>
 
     <% if (t) { %>
+    <% if (showLow) { %><p class="empty" style="margin:-0.4rem 0 0.6rem">Totals below are for all stock; the table lists only low and out of stock items.</p><% } %>
     <section class="stat-row" aria-label="Totals">
       <div class="stat"><span class="stat-label">Units in stock</span><strong><%= fmt.number(t.units) %></strong><span class="stat-sub"><%= fmt.number(t.items) %> items of <%= fmt.number(t.products) %> products</span></div>
       <% if (isMgr) { %>

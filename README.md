@@ -8,7 +8,7 @@
 ```
 backend/
   api.py              Flask API routes (CRUD, login, invoices, stock adjustments)
-  reporting.py        read-only reports: /inventory, /orders, /employees, /dashboard, store settings
+  reporting.py        read-only reports: /inventory, /orders, /employees, /dashboard, /report/inventory, /report/sales, store settings
   security.py         login tokens and the check that every API call is logged in
   sql.py              DBconnection (reuses connections), execute_read_query, execute_update_query
   creds.py            mycreds class: reads DB login from backend/.env.<env>
@@ -17,14 +17,14 @@ backend/
 frontend/
   server.js           Express routes
   lib/                charts (donut, stock in vs. out) and formatting helpers
-  views/pages/        one .ejs file per page (index.ejs, ...)
-  views/template/     shared pieces: head, nav, footer, messages, scripts, confirm, rowmenu (the ⋯ menu)
+  views/pages/        one .ejs file per page (index.ejs, ...; report-sales.ejs and report-inventory.ejs are the Reports)
+  views/template/     shared pieces: head, nav, footer, messages, scripts, confirm, rowmenu (the ⋯ menu), reportbar (report tabs, Print, CSV)
   tests/              offline checks (see Running the tests)
   USER_GUIDE.md       user guide
 public/
   css/styles.css      all custom CSS
   main.js             menu, ⋯ menus, Inventory adjust buttons
-  js/                 page scripts (add-variants.js, edit-order.js)
+  js/                 page scripts (add-variants.js, edit-order.js, record-transaction.js)
 database/             create_capstone_tables.sql, sample_data.sql
 docs/                 design suggestions and before/after screenshots
 package.json
@@ -114,7 +114,7 @@ Before running `python api.py`, set `AUTH_TOKEN_SECRET` in `backend/.env.develop
 - Without it, login fails with "Flask or MySQL may be unavailable."
 - Only put real secrets in `.env.development`, never in the `.example` files, which are committed.
 
-Set `APP_ENV=test` or `APP_ENV=production` to switch environments. Visit http://localhost:5000/db/check to confirm the database connection.
+Set `APP_ENV=test` or `APP_ENV=production` to switch environments. Visit http://localhost:5000/health to confirm the API is running (every other API address needs a login). To confirm the database connection, log in to the website: the Dashboard loads its numbers from the database, and its footer shows the Flask API status.
 
 ### Frontend (Express + EJS, port 8080)
 The Express server is `frontend/server.js`. `npm run dev` starts `frontend/server.js`, not the old top-level `server.js`.

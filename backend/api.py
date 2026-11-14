@@ -68,7 +68,7 @@ def db_error_response(mycon, error):
     mycon.close()
     code = getattr(error, 'errno', None)
     if code == 1062:
-        return jsonify({"message": "That already exists. Try a different name."}), 409
+        return jsonify({"message": "That already exists (the same name or email is already saved). Try a different one."}), 409
     if code == 1451:
         return jsonify({"message": "This is still used by other records (for example products or variants), so it can't be deleted."}), 409
     if code == 1452:
@@ -97,7 +97,8 @@ def add_supplier():
     data = request.json
     mycon = get_connection()
     query = "INSERT INTO Supplier (Name, Email, Phone) VALUES (%s, %s, %s)"
-    params = (data['Name'], data['Email'], data['Phone'])
+    #Email is UNIQUE, so a blank email is saved as NULL (several suppliers can have none) instead of ''
+    params = (data['Name'], (data.get('Email') or '').strip() or None, (data.get('Phone') or '').strip() or None)
     error = run_write(mycon, query, params)
     if error:
         return db_error_response(mycon, error)
@@ -112,7 +113,7 @@ def update_supplier(supplier_id):
         mycon.close()
         return jsonify({"message": "Supplier not found."}), 404
     query = "UPDATE Supplier SET Name=%s, Email=%s, Phone=%s WHERE Supplier_ID=%s"
-    params = (data['Name'], data['Email'], data['Phone'], supplier_id)
+    params = (data['Name'], (data.get('Email') or '').strip() or None, (data.get('Phone') or '').strip() or None, supplier_id)
     error = run_write(mycon, query, params)
     if error:
         return db_error_response(mycon, error)
@@ -446,56 +447,66 @@ def showAllInvoices():
     return jsonify(allInvoices)
 
 #Create (adding a new invoice to the Invoice table.)
+#The invoice and the stock change are saved together in one transaction (or not at all), and the stock row is
+#locked while it's checked, so two sales at the same moment can't both take the last item.
 @app.route('/create/invoice', methods =['POST'])
 def createInvoice():
+    userinput = request.get_json(silent=True) or {}
+    try:
+        transactionTypeID = int(userinput['Transaction_Type_ID'])
+        quantityChange = int(userinput['Quantity_Change']) #Needs to be a positive number for additions and a negative number for removals.
+        variantID = int(userinput['Variant_ID'])
+    except (KeyError, ValueError, TypeError):
+        return jsonify({'message' : 'Transaction_Type_ID, Quantity_Change and Variant_ID are required whole numbers.'}), 400
+    if quantityChange == 0:
+        return jsonify({'message' : 'Quantity_Change cannot be 0.'}), 400
+    #the employee comes from the login token, so an invoice is always recorded under the person who made it.
+    employeeID = int(g.employee['Employee_ID'])
+    supplied = userinput.get('Employee_ID')
+    if supplied is not None and str(supplied) != str(employeeID):
+        return jsonify({'message' : 'Employee_ID must match the signed-in account.'}), 403
+
     mycon = get_connection()
-    userinput = request.get_json()
-    transactionTypeID = userinput['Transaction_Type_ID']
-    quantityChange = int(userinput['Quantity_Change']) #Needs to be a positive number for additions and a negative number for removals. 
-    variantID = userinput['Variant_ID']
-    employeeID = userinput['Employee_ID'] #the employee ID gets filled in from the session store. the user does not have to manually input this.
-
-    #these get used below to verify that these IDs exist in the system. If they do not, then the call fails. 
-    sql = "select Variant_ID from Product_Variant where Variant_ID =%s "
-    sql1 = "select Transaction_Type_ID from Transaction_Type where Transaction_Type_ID = %s "
-    sql2 = "select Employee_ID from Employee where Employee_ID = %s"
-
-    variant = execute_read_query(mycon, sql, (variantID,))
-    transaction = execute_read_query(mycon, sql1, (transactionTypeID,))
-    employee = execute_read_query(mycon, sql2, (employeeID,))
-
-    if not variant:
+    if mycon is None:
+        return jsonify({'message' : 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = mycon.cursor(dictionary=True)
+        #these verify that the IDs exist in the system. If they do not, then the call fails.
+        cursor.execute("select Transaction_Type from Transaction_Type where Transaction_Type_ID = %s", (transactionTypeID,))
+        transaction = cursor.fetchone()
+        if transaction is None:
+            mycon.rollback()
+            return jsonify({'message' : 'Transaction type does not exist. Try a different transaction type.'}), 404
+        #a Sale takes stock away and a Restock adds it
+        kind = transaction['Transaction_Type']
+        if (kind == 'Sale' and quantityChange > 0) or (kind == 'Restock' and quantityChange < 0):
+            mycon.rollback()
+            return jsonify({'message' : 'A Sale must be negative and a Restock must be positive.'}), 400
+        cursor.execute("select Quantity from Inventory where Variant_ID = %s FOR UPDATE", (variantID,))
+        stock = cursor.fetchone()
+        if stock is None:
+            mycon.rollback()
+            return jsonify({'message': 'No inventory record for that variant'}), 404
+        #below here checks to make sure that the current stock plus the quantity change from the user is >= 0.
+        currentStock = int(stock['Quantity'])
+        if currentStock + quantityChange < 0:
+            mycon.rollback()
+            return jsonify({'message' : 'There is not enough stock to complete this request. %s items are in stock.' % (currentStock)}), 400
+        # date.today() uses this computer's date. CURDATE() used the database's UTC clock, so evening sales were saved as tomorrow.
+        cursor.execute("insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values (%s, %s, %s, %s, %s)",
+                       (transactionTypeID, quantityChange, date.today(), variantID, employeeID))
+        cursor.execute("update Inventory set Quantity = Quantity + %s where Variant_ID = %s", (quantityChange, variantID))
+        mycon.commit()
+        return jsonify({'message' : 'Invoice created and inventory updated.'}), 201
+    except Exception:
+        mycon.rollback()
+        app.logger.exception('Invoice create failed')
+        return jsonify({'message' : 'The transaction could not be saved. Nothing was changed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
         mycon.close()
-        return jsonify({'message' : 'There are no variants with that ID. Try another ID number.'}), 404
-    if not transaction:
-        mycon.close()
-        return jsonify({'message' : 'Transaction type does not exist. Try a different transaction type.'}), 404
-    if not employee:
-        mycon.close()
-        return jsonify({'message' : 'Employee does not exist. Try another ID.'}), 404
-
-
-    #The code below here checks to make sure the product variant exists.
-    sql3 = "select Quantity from Inventory where Variant_ID = %s"
-    stock = execute_read_query(mycon, sql3, (variantID,))
-    if not stock:
-        mycon.close()
-        return jsonify({'message': 'No inventory record for that variant'}), 404
-    #below here checks to make sure that the current stock plus the quantity change from the user is > 0.
-    #If it is not, then the server rejects the request.
-    currentStock = stock[0]['Quantity']
-    if currentStock + quantityChange < 0:
-        mycon.close()
-        return jsonify({'message' : 'There is not enough stock to complete this request. %s items are in stock.' % (currentStock)}), 400
-    #This updates the inventoy amount based on the amount added or removed
-    sql4 = "insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values (%s, %s, %s, %s, %s)"
-    # date.today() uses this computer's date. CURDATE() used the database's UTC clock, so evening sales were saved as tomorrow.
-    execute_update_query(mycon, sql4, (transactionTypeID, quantityChange, date.today(), variantID, employeeID))
-    sql5 = "update Inventory set Quantity = Quantity + %s where Variant_ID = %s"
-    execute_update_query(mycon, sql5, (quantityChange, variantID))
-
-    mycon.close()
-    return jsonify({'message' : 'Invoice created and inventory updated.'}), 201
 
 #Update (updates an invoice. The Invoice_ID must be sent in the request body to identify which invoice to change.)
 #Any of these can be changed: Transaction_Type_ID, Quantity_Change, Variant_ID (the item) and Date (YYYY-MM-DD).
@@ -584,45 +595,52 @@ def updateInvoice():
         mycon.close()
 
 #Delete (deletes an invoice and undoes its change to the inventory. The Invoice_ID must be sent in the request body.)
+#Deleting and undoing the stock change happen together in one transaction, or not at all.
 @app.route('/delete/invoice', methods=['DELETE'])
 def deleteInvoice():
-    mycon = get_connection()
-    userinput = request.get_json()
-    invoiceID = userinput.get('Invoice_ID')
-
-    if not invoiceID:
-        mycon.close()
+    userinput = request.get_json(silent=True) or {}
+    try:
+        invoiceID = int(userinput.get('Invoice_ID'))
+    except (ValueError, TypeError):
         return jsonify({'message' : 'Invoice_ID is required.'}), 400
 
-    #pulls the invoice so its quantity can be taken back out of the inventory
-    sql = "select Quantity_Change, Variant_ID from Invoice where Invoice_ID = %s"
-    invoice = execute_read_query(mycon, sql, (invoiceID,))
-    if not invoice:
+    mycon = get_connection()
+    if mycon is None:
+        return jsonify({'message' : 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = mycon.cursor(dictionary=True)
+        #pulls the invoice so its quantity can be taken back out of the inventory
+        cursor.execute("select Quantity_Change, Variant_ID from Invoice where Invoice_ID = %s FOR UPDATE", (invoiceID,))
+        invoice = cursor.fetchone()
+        if invoice is None:
+            mycon.rollback()
+            return jsonify({'message' : 'Invoice not found. Try a different Invoice_ID.'}), 404
+        oldQuantity = int(invoice['Quantity_Change'])
+        variantID = invoice['Variant_ID']
+        #undoing a restock removes stock, so this checks the stock won't go below 0
+        cursor.execute("select Quantity from Inventory where Variant_ID = %s FOR UPDATE", (variantID,))
+        stock = cursor.fetchone()
+        if stock is None:
+            mycon.rollback()
+            return jsonify({'message' : 'No inventory record for that variant'}), 404
+        currentStock = int(stock['Quantity'])
+        if currentStock - oldQuantity < 0:
+            mycon.rollback()
+            return jsonify({'message' : 'This invoice cannot be deleted. Undoing it would take the stock below 0. %s items are in stock.' % (currentStock)}), 400
+        #deletes the invoice and reverses its change to the inventory
+        cursor.execute("delete from Invoice where Invoice_ID = %s", (invoiceID,))
+        cursor.execute("update Inventory set Quantity = Quantity - %s where Variant_ID = %s", (oldQuantity, variantID))
+        mycon.commit()
+        return jsonify({'message' : 'Invoice deleted and inventory updated.'})
+    except Exception:
+        mycon.rollback()
+        app.logger.exception('Invoice delete failed')
+        return jsonify({'message' : 'The order could not be deleted. Nothing was changed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
         mycon.close()
-        return jsonify({'message' : 'Invoice not found. Try a different Invoice_ID.'}), 404
-
-    oldQuantity = invoice[0]['Quantity_Change']
-    variantID = invoice[0]['Variant_ID']
-
-    #undoing a restock removes stock, so this checks the stock won't go below 0
-    sql1 = "select Quantity from Inventory where Variant_ID = %s"
-    stock = execute_read_query(mycon, sql1, (variantID,))
-    if not stock:
-        mycon.close()
-        return jsonify({'message' : 'No inventory record for that variant'}), 404
-    currentStock = stock[0]['Quantity']
-    if currentStock - oldQuantity < 0:
-        mycon.close()
-        return jsonify({'message' : 'This invoice cannot be deleted. Undoing it would take the stock below 0. %s items are in stock.' % (currentStock)}), 400
-
-    #deletes the invoice and reverses its change to the inventory
-    sql2 = "delete from Invoice where Invoice_ID = %s"
-    execute_update_query(mycon, sql2, (invoiceID,))
-    sql3 = "update Inventory set Quantity = Quantity - %s where Variant_ID = %s"
-    execute_update_query(mycon, sql3, (oldQuantity, variantID))
-
-    mycon.close()
-    return jsonify({'message' : 'Invoice deleted and inventory updated.'})
 
 #Update (the inventory edit form. Sets a variant's stock to a new quantity and records the change as an Adjustment invoice.)
 #Variant_ID and New_Quantity come from the edit form. The employee ID gets filled in from the session store.

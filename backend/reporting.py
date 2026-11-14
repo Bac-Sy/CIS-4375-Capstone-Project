@@ -109,6 +109,16 @@ def register_reporting_routes(app, connect, read_query):
         LEFT JOIN Supplier sup ON sup.Supplier_ID = p.Supplier_ID
     '''
 
+    @app.get('/orders/<int:invoice_id>')
+    def order_detail(invoice_id):
+        rows = fetch(ORDER_SELECT + ' WHERE i.Invoice_ID = %s', (invoice_id,))
+        if not rows:
+            return jsonify({'message': 'Order not found.'}), 404
+        row = rows[0]
+        if row.get('date') is not None:
+            row['date'] = str(row['date'])[:10]
+        return jsonify(row)
+
     @app.get('/orders')
     def orders_summary():
         type_filter = str(request.args.get('type', '')).strip()[:50]
@@ -116,17 +126,24 @@ def register_reporting_routes(app, connect, read_query):
             limit = min(max(int(request.args.get('limit', 100)), 1), 200)
         except (TypeError, ValueError):
             limit = 100
+        # offset lets the Orders page show older orders a page at a time
+        try:
+            offset = max(int(request.args.get('offset', 0)), 0)
+        except (TypeError, ValueError):
+            offset = 0
         types = [row['Transaction_Type'] for row in fetch(
             'SELECT Transaction_Type FROM Transaction_Type ORDER BY Transaction_Type')]
         if type_filter and type_filter not in types:
-            return jsonify({'rows': [], 'types': types, 'limit': limit})
+            return jsonify({'rows': [], 'types': types, 'limit': limit, 'offset': offset, 'has_more': False})
         where = 'WHERE t.Transaction_Type = %s' if type_filter else ''
-        params = (type_filter, limit) if type_filter else (limit,)
-        rows = fetch(ORDER_SELECT + where + ' ORDER BY i.Date DESC, i.Invoice_ID DESC LIMIT %s', params)
+        params = (type_filter, limit + 1, offset) if type_filter else (limit + 1, offset)
+        rows = fetch(ORDER_SELECT + where + ' ORDER BY i.Date DESC, i.Invoice_ID DESC LIMIT %s OFFSET %s', params)
+        has_more = len(rows) > limit
+        rows = rows[:limit]
         for row in rows:
             if row.get('date') is not None:
                 row['date'] = str(row['date'])[:10]
-        return jsonify({'rows': rows, 'types': types, 'limit': limit})
+        return jsonify({'rows': rows, 'types': types, 'limit': limit, 'offset': offset, 'has_more': has_more})
 
     # ---------- REPORTS (R-10): inventory report and sales report ----------
     # Read-only. Sales are valued at each item's current price and cost (the database doesn't

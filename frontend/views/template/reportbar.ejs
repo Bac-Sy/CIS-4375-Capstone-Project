@@ -22,4 +22,5 @@
     <a href="<%= t[2] %>" class="<%= barKey === t[0] ? 'active' : '' %>"<% if (barKey === t[0]) { %> aria-current="page"<% } %>><%= t[1] %></a>
   <% }); %>
 </nav>
-<p class="print-only report-print-line">Space City Couture · <%= barTitle %><%= barSubtitle ? ' · ' + barSubtitle : '' %></p>
+<% const printedOn = new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); %>
+<p class="print-only report-print-line">Space City Couture · <%= barTitle %><%= barSubtitle ? ' · ' + barSubtitle : '' %> · printed <%= printedOn %></p>

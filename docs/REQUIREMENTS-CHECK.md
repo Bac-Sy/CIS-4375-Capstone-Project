@@ -1,43 +1,98 @@
 # Requirements check (handoff)
 
-Each requirement from the Requirements Traceability Matrix, where it is in the app, and how it was checked.
-Checked on November 13–14, 2026, against the `bianca-redesign` branch (PR #18), on the shared development database, logged in as a test manager.
+Each requirement from the Requirements Traceability Matrix: every feature its "Proposed Feature / Design Element" column promises, where it is in the app, and how it was checked.
+Checked on November 13, 2026, against the `bianca-redesign` branch (PR #18), on the shared development database, logged in as a test manager. This was a line-by-line review of every RTM column, plus the problems noted in the RTM's Notes column. The demo script (steps 1–10) was then run end to end on the real app: 28 of 28 checks passed.
 
-**Status: all in-scope requirements are met.** R-09 is out of scope (the store only sells physical stock). The matrix needs a few wording updates so its "Proposed Feature" column matches what was built; they're listed under [Matrix updates](#matrix-updates).
+**Summary:** R-01 to R-10 and R-13 are met; several need RTM wording updates (listed below). R-09 is out of scope. **R-11 is in progress**: the user guide is still being written (Madison), and usability is judged by the sponsor at the demo. **R-12 is mostly met**; the remaining gaps are database-side (see the R-12 row and "Still open").
 
-| ID | Requirement | Where in the app | How it was checked | Status |
-|---|---|---|---|---|
-| R-01 | Centralized records of all products | **Inventory** (every product with its size / color variants, location, price, stock); **Manage catalog** (products, suppliers, categories, locations, colors, sizes). Records are identified by their database IDs (Product_ID, Variant_ID) | Demo walkthrough steps 2–4 | Pass* |
-| R-02 | Track the quantity of each product | **Inventory**: In stock per variant and a Total per product; **Dashboard → Inventory**: units in stock right now | Walkthrough steps 2, 4, 6–8; stock checked after every change | Pass |
-| R-03 | Add, edit and deactivate products | **Manage catalog → + Add product**, **Add variants**, **Edit product** (Availability → Not available shows a "Not available" tag on Inventory) | Walkthrough steps 4–5 | Pass |
-| R-04 | Record inventory received and sold | **Orders → + Record Transaction** (Restock / Sale); **Edit order** to correct one | Walkthrough steps 6–7; edit-order tests (change item, type, date, quantity) | Pass |
-| R-05 | Update quantities automatically | Every Sale, Restock, Adjustment, order edit and order delete updates stock in the same step (the API refuses changes that would go below 0) | Walkthrough 6–8; 32 save tests (stock checked before and after each) | Pass |
-| R-06 | Record in-person sales linked to products | **Record Transaction → Sale**: every sale is tied to a product, size and color. All sales are in-person (no online or dropship channel) | Walkthrough step 7 | Pass* |
-| R-07 | Identify low and out-of-stock products | Red **Low** tags on Inventory; **Low stock only** filter; **Dashboard → Low stock** list; the threshold is set by managers on **Settings** | Walkthrough step 8; threshold save tests | Pass* |
-| R-08 | Supplier and purchasing information | **Manage catalog → Suppliers** (add / edit / delete); every product has a supplier; purchases are recorded as **Restock** orders | Walkthrough steps 3, 4, 6 | Pass |
-| R-09 | Stocked vs. dropshipped products | — | — | Out of scope |
-| R-10 | Reports on current inventory and sales | **Dashboard** (sales total and by category, current inventory, low stock, stock in vs. out by week, recent orders by type); **Best sellers** report (7 / 30 / 90 days / all time, by product or by item); **Orders** filtered by type | Walkthrough step 9; the UTC date bug that made this fail on 11/11 was fixed in PR #10 | Pass |
-| R-11 | Easy to learn and use | Same layout and ⋯ menu on every table; names instead of ID numbers; confirm pop-ups name what's being changed; [User Guide](../frontend/USER_GUIDE.md) (Madison is writing it) | Judged by the sponsor during the demo; user guide still in progress | In progress |
-| R-12 | Accurate, reliable inventory information | Input checks on every form and API route; every stock change is an order with who and when (audit trail); stock can't go below 0; duplicate variants blocked; variants and products with history can't be deleted; order edits and stock adjustments save all-or-nothing | Save tests (bad input, duplicates, negative counts, oversized sales) | Pass* |
-| R-13 | Protect business information | Login required for every page and every API call (signed tokens); passwords stored as argon2 hashes; manager-only pages and actions checked by the website (deletes and employee changes are also checked by the API); CSRF tokens on every form; login rate limiting; **every database query uses parameters** (45 older queries were converted, so SQL injection doesn't work) | `frontend/tests/check_security.py`, `check_routes.js`; injection attempts on the API; employee view checks | Pass |
+| ID | Promised element | Where in the app | Status |
+|---|---|---|---|
+| **R-01** | Central product records: name, category, size, color, price | `Product` and `Product_Variant` tables; **Inventory** page (every product with its size / color variants, location, price, stock); **Manage catalog** | Met |
+| | SKU | Not built: products and variants are identified by their database IDs | Wording |
+| | "shirt products" | The store sells clothing in general (dresses, tops…) | Wording |
+| | RTM note: edit variant showed no success message | Every edit page shows "… updated." after saving | Fixed |
+| **R-02** | Quantity on hand per product / variant, shown in the inventory view | `Inventory.Quantity` (can't go below 0); **Inventory** In stock column and product **Total**; **Dashboard → Inventory** (units in stock right now); **Inventory report** | Met |
+| **R-03** | Add products | **Manage catalog → + Add product** → **Add variants** (many sizes / colors at once, duplicates blocked) | Met |
+| | Edit products | **Edit product** / **Edit variant** (managers), with a confirm pop-up | Met |
+| | Active / inactive flag | **Availability** on Edit product; "Not available" tag on Inventory, the Inventory report and Record transaction | Met |
+| **R-04** | Receiving form | **Orders → + Record Transaction → Restock** (shows "From: \<supplier\>") | Met |
+| | Sale form | **Record Transaction → Sale** | Met |
+| | Transaction log | `Invoice` table; **Orders** page with type filter and **Newer / Older** paging (all orders reachable); **Sales report** lists every sale in a date range | Met |
+| | RTM note: no UI form for Restock or Sale | Record Transaction | Fixed |
+| **R-05** | Quantities update automatically on save | Sales, restocks, adjustments, order edits and order deletes each update stock **in the same database transaction** as the order (all-or-nothing, with the stock row locked so two sales at once can't oversell). The API refuses changes that would take stock below 0 | Met |
+| **R-06** | Sales entry form linked to product and variant | Record Transaction: every sale is tied to a product, size and color | Met |
+| | Sale-type (in-person) field | All sales are in-person (no online or dropship channel), so no extra field is needed | Wording |
+| **R-07** | Low / out-of-stock indicators | Red **Low** / **Out** tags on Inventory; **Dashboard → Low stock** ("Out of stock" at 0); Inventory report status column | Met |
+| | Filter | **Inventory → Low stock only**; **Inventory report → Low and out of stock** (a reorder list with each item's supplier) | Met |
+| | Reorder threshold per product | One **low stock threshold** for the whole store, set by managers on **Settings** | Wording |
+| **R-08** | Supplier table linked to products | `Supplier` table; every product has a supplier; **Manage catalog → Suppliers** (add / edit / delete; email and phone optional) | Met |
+| | Purchase / receiving records | Purchases are recorded as **Restock** orders (quantity, date, who). Orders, the Dashboard and Edit order show "from \<supplier\>". The supplier shown is the product's *current* supplier; it isn't stored on each order | Met (see note) |
+| | Which products to reorder | Inventory report → Low and out of stock, with supplier | Met |
+| | RTM notes: no purchasing form; edit supplier showed no message | Record Transaction → Restock; edit pages show "… updated." | Fixed |
+| **R-09** | Stocked vs. dropshipped | — | Out of scope |
+| **R-10** | **Inventory summary report** | **Reports → Inventory report**: every item with category, supplier, location, stock, status and price; managers also see cost and stock value (at cost and at price) with totals; a low and out of stock view | Met |
+| | **Sales report** | **Reports → Sales report** for any dates (this month, last month, last 30 days, this year or custom): sales, units, number of sales, average sale; managers also see cost of goods and gross profit; by product, by category, by day, and every sale with totals | Met |
+| | Printable and exportable | Every report (including Best sellers) has **Print / Save as PDF** and **Download for Excel (CSV)** | Met |
+| | Dashboard | Sales (last 30 days, by category), recent orders by type, current inventory, low stock, stock in vs. out by week | Met |
+| | Product performance | **Reports → Best sellers** (7 / 30 / 90 days / all time, by product or by size and color) | Met |
+| | RTM note: Fail (dashboard showed $0, UTC dates) | Fixed in PR #10: dates are saved in local time | Retest |
+| **R-11** | Simple navigation | One sidebar: Dashboard, Inventory, Orders, Reports, Employees, Settings, Manage catalog (managers) | Met |
+| | Consistent layout | The same table layout, ⋯ menu, confirm pop-ups and messages on every page; names instead of ID numbers | Met |
+| | User guide | `frontend/USER_GUIDE.md`: outline only. **Madison is writing it.** It should cover Reports (print / CSV), Settings (password, threshold), the low stock filter and Best sellers | **In progress** |
+| | Usability testing | With the sponsor at the demo (Nov 16–17) | Not started |
+| **R-12** | Input validation | Every form is checked by the website before it reaches the API; the stock, order, report and password API routes also check their input. The older catalog API routes (suppliers, categories, products…) rely on the website's checks | Met (API partly) |
+| | Transaction audit trail | Every stock change is an order with who and when, and recorded under the logged-in person (the API enforces it). **Only managers** can edit or delete orders. Editing an order keeps its original "Recorded by"; deleting removes it | Mostly met |
+| | Data integrity constraints | Foreign keys, UNIQUE and CHECK (quantity, price, cost ≥ 0) in the schema; multi-step stock changes are all-or-nothing; duplicate size / color variants are blocked by the app | Mostly met (see "Still open") |
+| | Backups | Not part of the app: AWS RDS automated backups | Wording |
+| **R-13** | Authentication | Login for every page and every API call (signed tokens); passwords stored as argon2 hashes; session renewed at login; login rate limiting; CSRF tokens on every form | Met |
+| | Access control | **Managers only:** Manage catalog, adding / editing / deleting products, variants, suppliers, categories and locations, editing and deleting orders, employee administration, store settings, and cost / profit in reports. **Employees:** inventory, adjust stock, record transactions, reports without cost, their own password. Checked by the website; the API also enforces deletes, employee changes, store settings and "who recorded it" | Met |
+| | Secure data storage | Real `.env` files are never committed (git history checked); cookies are httpOnly (and secure in production); every database query uses parameters (SQL injection doesn't work) | Met |
+| | RTM note: blocked page said "Please log in" | Now says "Manager permissions are required for this action." | Fixed |
 
-\* Passes, but the matrix wording should be updated. See below.
-
-## Matrix updates
+## Matrix updates (wording)
 
 | ID | Matrix says | Update it to |
 |---|---|---|
-| R-01 | "Central product table (name, category, size, color, **SKU**, price)" | Products and variants are identified by their database IDs (Product_ID, Variant_ID); no SKU field |
-| R-06 | Blocked: "no form in the UI to record a sale, and no field to mark a sale as in-person" | Sales are recorded on Orders → Record Transaction. All sales are in-person, so no extra field is needed |
-| R-07 | "**Reorder-threshold** setting per product" | One **low stock threshold** for the whole store, set by managers on Settings |
+| R-01 | "shirt products"; "Central product table (… **SKU** …)" | "clothing products"; products and variants are identified by their database IDs, with no SKU field |
+| R-04 | Notes: "No UI form for Restock or Sale" | Recorded on Orders → Record Transaction |
+| R-06 | Blocked: no sale form, no in-person field | Sales are recorded on Record Transaction. All sales are in-person, so no extra field is needed |
+| R-07 | "Reorder-threshold setting **per product**" | One low stock threshold for the whole store, set by managers on Settings |
+| R-08 | Notes: "No UI form for purchasing"; edit supplier showed no message | Purchases are Restocks on Record Transaction; edit pages confirm saves |
 | R-09 | Blocked: waiting on sponsor | Out of scope: the store only sells physical stock it holds |
-| R-10 | Fail: dashboard sales showed $0 | Fixed (dates are saved in local time, PR #10). Retest |
-| R-12 | "…data integrity constraints, **backups**" | The app doesn't make backups. Use AWS RDS automated backups (on by default for RDS; check the retention period in the AWS console) |
-| R-13 | Note: "The blocked page says 'Please log in'…" | Fixed: it now says "Manager permissions are required for this action" |
-| R-03, R-08, R-01 | Notes about edit pages not showing a success message | Fixed: every edit page shows "… updated." after saving |
+| R-10 | Fail: dashboard showed $0 | Fixed (local dates, PR #10). Add the Reports pages (sales report, inventory report, print / CSV). Retest |
+| R-11 | Not Started | User guide in progress (Madison); usability judged at the demo |
+| R-12 | "… data integrity constraints, **backups**" | Backups are AWS RDS automated backups, not the app |
+| R-13 | Note: "Please log in" on the blocked page | Fixed |
 
-## Not covered by the app (decide before handoff)
+## Still open before handoff
 
-- **Backups:** handled by AWS RDS, not the app. Confirm automated backups are on for the production database.
-- **Hosting:** the app runs locally (Flask on port 5000, Express on 8080). The README covers setup; there's no production hosting set up.
-- **First login on a new database:** run `python backend/create_manager.py` to create the first manager.
+These need the team (or the database owner), not app code:
+
+1. **User guide** (R-11): Madison is finishing `frontend/USER_GUIDE.md`.
+2. **Clean up test data and accounts** on the database being handed over:
+   - TEST Amrin Dress and TEST Amrin Supplier (they appear in every report)
+   - the test managers "Test User" (`database/sample_data.sql` publishes its password) and Tester1
+   - Satin Midi Dress M / Black has cost $80.99 and price $32.00, so reports show a loss on it. The sample data had them the other way round.
+3. **Database constraints** (R-12) to add on the live RDS database:
+   - The `Invoice.Transaction_Type_ID` foreign key is missing there (see `create_capstone_tables.sql`).
+   - Consider `UNIQUE (Product_ID, Size_ID, Color_ID)` on `Product_Variant`, so duplicates are blocked by the database, not only the app.
+   - Run `UPDATE Supplier SET Email = NULL WHERE Email = ''`. Blank supplier emails are now saved as empty (NULL); this fixes older rows.
+4. **Backups:** confirm RDS automated backups are on, with the retention you want. The low stock threshold lives in `backend/settings.json` on the server, not in the database, so back that file up too, or just re-enter it.
+5. **Hosting:** the app runs locally (Flask on port 5000, Express on 8080); there's no production hosting.
+6. **First login on a new database:** run `python backend/create_manager.py`.
+
+## Known limits (fine for handoff, worth knowing)
+
+- **Reports use current prices:** sales reports value past sales at each item's *current* price and cost, because orders don't store the price at the time of the sale. The report says so.
+- **Supplier on restocks:** a restock shows the product's current supplier; it isn't saved on the order.
+- **Editing an order** keeps its original "Recorded by", and there's no separate edit history; only managers can edit or delete orders.
+
+## How it was checked
+
+- **Offline tests (no database needed):** `node frontend/tests/check_routes.js`, `node frontend/tests/verify_templates.js`, `python frontend/tests/check_security.py`. All pass. They cover routes, logins, manager-only pages (including the new ones), employee access, every template, and CSRF tokens.
+- **Manual checks on the real app (scripts run by the team, not saved in the repo):**
+  - the demo script, steps 1–10 (28 checks)
+  - adding variants, adjusting stock and editing orders (32 checks)
+  - read-only checks of the converted queries, including injection attempts
+  - report totals compared against the raw orders
+  - Every test record was deleted afterwards.

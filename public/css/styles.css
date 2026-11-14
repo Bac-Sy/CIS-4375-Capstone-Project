@@ -1015,3 +1015,4 @@ h1 {
 }
 .report-table th, .report-table td { padding-left: 0.65rem; padding-right: 0.65rem; white-space: normal; }
 .report-table td.num, .report-table th.num { white-space: nowrap; }
+.pager { display: flex; justify-content: space-between; gap: 1rem; padding: 0.9rem 1.25rem; border-top: 1px solid var(--line); }

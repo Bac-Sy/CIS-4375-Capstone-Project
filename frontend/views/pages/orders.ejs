@@ -28,7 +28,9 @@
 
                 <section class="panel">
                   <div class="panel-bar">
-                    <%= fmt.number(rows.length) %> <%= rows.length === 1 ? 'record' : 'records' %><% if (rows.length >= limit) { %>, showing the latest <%= limit %><% } %>
+                    <% const pg = typeof pageNumber !== 'undefined' ? pageNumber : 1; const more = typeof hasMore !== 'undefined' && hasMore;
+                       const first = (pg - 1) * limit + 1; const pageLink = n => '/orders?' + (selected ? 'type=' + encodeURIComponent(selected) + '&' : '') + 'page=' + n; %>
+                    <% if (pg === 1 && !more) { %><%= fmt.number(rows.length) %> <%= rows.length === 1 ? 'record' : 'records' %><% } else { %>Showing <%= fmt.number(first) %>–<%= fmt.number(first + rows.length - 1) %>, newest first<% } %>
                   </div>
                   <div class="table-scroll">
                     <table class="data-table">
@@ -63,7 +65,7 @@
                             <td class="num"><span class="qty <%= r.quantity_change < 0 ? 'neg' : 'pos' %>"><%= fmt.signed(r.quantity_change) %></span></td>
                             <td><%= r.employee || 'N/A' %></td>
                             <td class="menu-cell">
-                              <%- include('../template/rowmenu', { menuLabel: 'Actions for order #' + r.invoice_id, menuItems: (r.invoice_id && authenticated) ? [
+                              <%- include('../template/rowmenu', { menuLabel: 'Actions for order #' + r.invoice_id, menuItems: (r.invoice_id && Role === 'Manager') ? [
                                 { label: 'Edit order', href: '/orders/' + r.invoice_id + '/edit', icon: 'edit' },
                                 Role === 'Manager' && { label: 'Delete order', action: '/orders/' + r.invoice_id + '/delete', icon: 'delete', danger: true,
                                   confirm: 'Delete order #' + r.invoice_id + ' (' + r.transaction_type + ', ' + r.product + ' ' + r.size + ' / ' + r.color + ')? This reverses its stock change.',
@@ -75,6 +77,12 @@
                       </tbody>
                     </table>
                   </div>
+                  <% if (pg > 1 || more) { %>
+                    <nav class="pager" aria-label="More orders">
+                      <% if (pg > 1) { %><a class="btn btn-outline-secondary" href="<%= pageLink(pg - 1) %>">← Newer orders</a><% } else { %><span></span><% } %>
+                      <% if (more) { %><a class="btn btn-outline-secondary" href="<%= pageLink(pg + 1) %>">Older orders →</a><% } %>
+                    </nav>
+                  <% } %>
                 </section>
 
                 <%- include('../template/footer'); %>

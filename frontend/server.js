@@ -521,13 +521,15 @@ function normalizeOrder(r) {
 }
 app.get('/orders', pageAccess, async (req, res) => {
   const selected = typeof req.query.type === 'string' ? req.query.type : '';
-  const fallback = { rows: [], types: [], selected, limit: 100, dataAvailable: false };
+  // 100 orders per page, newest first; ?page=2 shows the next 100 older ones.
+  const pageNumber = /^[1-9]\d{0,5}$/.test(String(req.query.page || '')) ? Number(req.query.page) : 1;
+  const fallback = { rows: [], types: [], selected, limit: 100, pageNumber, hasMore: false, dataAvailable: false };
   try {
-    const reply = await apiGet('/orders', { type: selected, limit: 100 });
+    const reply = await apiGet('/orders', { type: selected, limit: 100, offset: (pageNumber - 1) * 100 });
     const rows = arrayData(Array.isArray(reply) ? reply : reply?.rows).map(normalizeOrder);
     return page(req, res, 'orders', {
       ...fallback, rows, types: arrayData(reply?.types),
-      limit: Number(reply?.limit) || 100, dataAvailable: true
+      limit: Number(reply?.limit) || 100, hasMore: Boolean(reply?.has_more), dataAvailable: true
     });
   } catch (err) {
     return page(req, res, 'orders', {
@@ -755,17 +757,15 @@ app.post('/record/transaction', signedIn, async (req, res) => {
   }
 });
 
-// Find an existing order by invoice ID.
+// Find an existing order by invoice ID (any order, however old).
 async function findOrder(id) {
-  const reply = await apiGet('/orders', { limit: 200 });
-
-  const rows = arrayData(
-    Array.isArray(reply) ? reply : reply?.rows
-  ).map(normalizeOrder);
-
-  return rows.find(
-    r => String(r.invoice_id) === String(id)
-  ) || null;
+  if (!/^[1-9]\d*$/.test(String(id))) return null;
+  try {
+    return normalizeOrder(await apiGet(`/orders/${encodeURIComponent(id)}`));
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
 }
 
 // EDIT ORDER: the type, item (product / size / color), date and quantity can all be corrected.
@@ -784,7 +784,8 @@ async function loadOrderForm(id) {
 }
 
 // GET: Display the Edit Order page.
-app.get('/orders/:id/edit', signedIn, async (req, res) => {
+// Correcting an order is manager-only: it rewrites a stock record, so employees ask a manager (audit trail, R-12).
+app.get('/orders/:id/edit', managerOnly, async (req, res) => {
   try {
     const { order, types, variants } = await loadOrderForm(req.params.id);
 
@@ -808,7 +809,7 @@ app.get('/orders/:id/edit', signedIn, async (req, res) => {
 });
 
 // POST: Save changes to an Order.
-app.post('/orders/:id/edit', signedIn, async (req, res) => {
+app.post('/orders/:id/edit', managerOnly, async (req, res) => {
   const back =
     `/orders/${encodeURIComponent(req.params.id)}/edit`;
 
@@ -1322,13 +1323,13 @@ app.post('/manage/add/:kind', managerOnly, async (req, res) => {
 
     return flashAndRedirect(
       req, res,
-      result?.message || 'Catalogue record added.',
+      result?.message || 'Catalog record added.',
       '/manage'
     );
   } catch (err) {
     return flashAndRedirect(
       req, res,
-      apiError(err, 'Unable to add catalogue record.'),
+      apiError(err, 'Unable to add catalog record.'),
       '/manage'
     );
   }
@@ -1355,7 +1356,7 @@ app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
   if (!config) {
     return errorPage(
       req, res, 404,
-      'Invalid catalogue type',
+      'Invalid catalog type',
       'Only Colors and Sizes can be renamed here.'
     );
   }
@@ -1382,13 +1383,13 @@ app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
 
     return flashAndRedirect(
       req, res,
-      result?.message || 'Catalogue record updated.',
+      result?.message || 'Catalog record updated.',
       '/manage'
     );
   } catch (err) {
     return flashAndRedirect(
       req, res,
-      apiError(err, 'Unable to rename catalogue record.'),
+      apiError(err, 'Unable to rename catalog record.'),
       '/manage'
     );
   }
@@ -1522,7 +1523,7 @@ app.post('/products/:id/variants', managerOnly, async (req, res) => {
 });
 
 
-// MANAGER: create a catalogue product using the existing Flask product API.
+// MANAGER: create a catalog product using the existing Flask product API.
 // A product needs a category and supplier; variants/stock are managed separately.
 app.get('/new/product', managerOnly, async (req, res) => {
   try {
@@ -1565,7 +1566,7 @@ const productId = Number(created.Product_ID);
 if (!Number.isSafeInteger(productId) || productId <= 0) {
   return flashAndRedirect(
     req, res,
-    'Product created, but no ID was returned. Check Manage Catalogue.',
+    'Product created, but no ID was returned. Check Manage catalog.',
     '/manage'
   );
 }
@@ -1639,7 +1640,9 @@ const editPages = [
 
 for (const config of editPages) {
   const label = config.key.charAt(0).toUpperCase() + config.key.slice(1);
-  app.get(`/${config.kind}/:id/edit`, signedIn, async (req, res) => {
+  // Editing the catalog (products, variants, suppliers, categories, locations) is manager-only, like adding
+  // and deleting: these pages show cost and change what the whole store sells.
+  app.get(`/${config.kind}/:id/edit`, managerOnly, async (req, res) => {
     try {
       const results = await Promise.all(config.list.map(apiGetEndpoint => apiGet(apiGetEndpoint)));
       const values = {};
@@ -1653,7 +1656,7 @@ for (const config of editPages) {
     }
   });
 
-  app.post(`/${config.kind}/:id/edit`, signedIn, async (req, res) => {
+  app.post(`/${config.kind}/:id/edit`, managerOnly, async (req, res) => {
     const updated = {};
     for (const key of config.fields) {
       if (req.body[key] !== undefined) updated[key] = req.body[key] === '' ? null : req.body[key];
