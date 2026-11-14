@@ -1124,3 +1124,4 @@ h1 {
 }
 @media print { .pdfv { display: none !important; } }
 .inv-count { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.inv-product td.inv-summary { color: var(--muted); }

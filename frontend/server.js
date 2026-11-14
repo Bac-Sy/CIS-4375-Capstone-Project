@@ -459,11 +459,20 @@ function groupInventory(rows, products, categories, threshold) {
       groups.set(key, { id: p.Product_ID, name: p.Name, category: categoryNames.get(String(p.Category_ID)) || '', available, variants: [] });
     }
   }
-  return [...groups.values()].map(g => ({
-    ...g,
-    total: g.variants.reduce((sum, v) => sum + (Number(v.Quantity) || 0), 0),
-    low: g.variants.filter(v => Number(v.Quantity) <= threshold).length
-  })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return [...groups.values()].map(g => {
+    // A summary for the product row, so a collapsed product still shows where it is and what it costs:
+    // one location / one price, or how many locations / the price range.
+    const locations = [...new Set(g.variants.map(v => v.Location || 'Unassigned'))];
+    const prices = g.variants.map(v => Number(v.Price)).filter(Number.isFinite);
+    return {
+      ...g,
+      total: g.variants.reduce((sum, v) => sum + (Number(v.Quantity) || 0), 0),
+      low: g.variants.filter(v => Number(v.Quantity) <= threshold).length,
+      locations,
+      priceMin: prices.length ? Math.min(...prices) : null,
+      priceMax: prices.length ? Math.max(...prices) : null
+    };
+  }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 app.get('/inventory', pageAccess, async (req, res) => {
   try {

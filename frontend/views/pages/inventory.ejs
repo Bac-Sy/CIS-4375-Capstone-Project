@@ -77,8 +77,9 @@
                               </div>
                             </td>
                             <td><%= group.category || 'No category' %></td>
-                            <td></td>
-                            <td></td>
+                            <% const locs = group.locations || []; %>
+                            <td class="inv-summary" title="<%= locs.join(', ') %>"><%= locs.length === 0 ? '' : locs.length === 1 ? locs[0] : locs[0] + ' + ' + (locs.length - 1) + ' more' %></td>
+                            <td class="num inv-summary"><%= group.priceMin == null ? '' : group.priceMin === group.priceMax ? money(group.priceMin) : money(group.priceMin) + ' – ' + money(group.priceMax) %></td>
                             <% if (group.variants.length) { %>
                               <td class="count">Total <%= group.total %></td>
                             <% } else { %>
