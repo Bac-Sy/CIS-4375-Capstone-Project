@@ -41,11 +41,11 @@ Checked on November 13, 2026, against the `bianca-redesign` branch (PR #18), on 
 | | User guide | `frontend/USER_GUIDE.md`: outline only. **Madison is writing it.** It should cover Reports (print / CSV), Settings (password, threshold), the low stock filter and Best sellers | **In progress** |
 | | Usability testing | With the sponsor at the demo (Nov 16–17) | Not started |
 | **R-12** | Input validation | Every form is checked by the website before it reaches the API; the stock, order, report and password API routes also check their input. The older catalog API routes (suppliers, categories, products…) rely on the website's checks | Met (API partly) |
-| | Transaction audit trail | Every stock change is an order with who and when, and recorded under the logged-in person (the API enforces it). **Only managers** can edit or delete orders. Editing an order keeps its original "Recorded by"; deleting removes it | Mostly met |
+| | Transaction audit trail | Every stock change is an order with who and when, and recorded under the logged-in person (the API enforces it). Any employee can **fix** an order (item, quantity, type, date); **only managers can delete** one. Editing keeps the original "Recorded by", with no separate edit history; deleting removes it | Mostly met |
 | | Data integrity constraints | Foreign keys, UNIQUE and CHECK (quantity, price, cost ≥ 0) in the schema; multi-step stock changes are all-or-nothing; duplicate size / color variants are blocked by the app | Mostly met (see "Still open") |
 | | Backups | Not part of the app: AWS RDS automated backups | Wording |
 | **R-13** | Authentication | Login for every page and every API call (signed tokens); passwords stored as argon2 hashes; session renewed at login; login rate limiting; CSRF tokens on every form | Met |
-| | Access control | **Managers only:** Manage catalog, adding / editing / deleting products, variants, suppliers, categories and locations, editing and deleting orders, employee administration, store settings, and cost / profit in reports. **Employees:** inventory, adjust stock, record transactions, reports without cost, their own password. Checked by the website; the API also enforces deletes, employee changes, store settings and "who recorded it" | Met |
+| | Access control | **Managers only:** Manage catalog, adding / editing / deleting products, variants, suppliers, categories and locations, deleting orders, employee administration, store settings, and cost / profit in reports. **Employees:** inventory, adjust stock, record transactions, fix orders, reports without cost, their own password. Checked by the website; the API also enforces deletes, employee changes, store settings and "who recorded it" | Met |
 | | Secure data storage | Real `.env` files are never committed (git history checked); cookies are httpOnly (and secure in production); every database query uses parameters (SQL injection doesn't work) | Met |
 | | RTM note: blocked page said "Please log in" | Now says "Manager permissions are required for this action." | Fixed |
 
@@ -85,7 +85,7 @@ These need the team (or the database owner), not app code:
 
 - **Reports use current prices:** sales reports value past sales at each item's *current* price and cost, because orders don't store the price at the time of the sale. The report says so.
 - **Supplier on restocks:** a restock shows the product's current supplier; it isn't saved on the order.
-- **Editing an order** keeps its original "Recorded by", and there's no separate edit history; only managers can edit or delete orders.
+- **Editing an order** keeps its original "Recorded by", and there's no separate edit history. Any employee can fix an order; only managers can delete one.
 
 ## How it was checked
 

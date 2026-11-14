@@ -100,16 +100,18 @@ for (const url of ['/reports', '/reports/sales', '/reports/inventory', '/reports
   const out = runGuard(route('GET', url).handlers[0], null);
   assert(!out.allowed && (out.redirect === '/login' || out.code === 401), `${url} must require a login`);
 }
-for (const url of ['/products/:id/edit', '/variants/:id/edit', '/suppliers/:id/edit', '/categories/:id/edit', '/locations/:id/edit', '/orders/:id/edit']) {
+for (const url of ['/products/:id/edit', '/variants/:id/edit', '/suppliers/:id/edit', '/categories/:id/edit', '/locations/:id/edit']) {
   const out = runGuard(route('GET', url).handlers[0], employee);
   assert(!out.allowed && out.code === 403, `${url} must be manager-only`);
   const post = runGuard(route('POST', url).handlers[0], employee);
   assert(!post.allowed && post.code === 403, `POST ${url} must be manager-only`);
 }
-for (const [method, url] of [['POST', '/inventory/:variantId/adjust'], ['GET', '/new/transaction'], ['POST', '/record/transaction'], ['POST', '/settings/password']]) {
+assert.strictEqual(runGuard(route('POST', '/orders/:id/delete').handlers[0], employee).code, 403, 'deleting an order must be manager-only');
+for (const [method, url] of [['POST', '/inventory/:variantId/adjust'], ['GET', '/new/transaction'], ['POST', '/record/transaction'],
+  ['GET', '/orders/:id/edit'], ['POST', '/orders/:id/edit'], ['POST', '/settings/password']]) {
   assert(runGuard(route(method, url).handlers[0], employee).allowed, `employees must be able to use ${method} ${url}`);
 }
-console.log('PASS: reports need a login; catalog and order edits are manager-only; employees can adjust stock, record transactions and change their password');
+console.log('PASS: reports need a login; catalog edits and order deletes are manager-only; employees can adjust stock, record transactions, fix orders and change their password');
 
 // Product-creation integration simulation: mock only the Flask HTTP response,
 // exercise the actual Express route handlers and verify the posted JSON.

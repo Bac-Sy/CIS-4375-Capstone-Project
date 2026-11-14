@@ -784,8 +784,8 @@ async function loadOrderForm(id) {
 }
 
 // GET: Display the Edit Order page.
-// Correcting an order is manager-only: it rewrites a stock record, so employees ask a manager (audit trail, R-12).
-app.get('/orders/:id/edit', managerOnly, async (req, res) => {
+// Any signed-in employee can correct an order (wrong item, quantity, type or date); only managers can delete one.
+app.get('/orders/:id/edit', signedIn, async (req, res) => {
   try {
     const { order, types, variants } = await loadOrderForm(req.params.id);
 
@@ -809,7 +809,7 @@ app.get('/orders/:id/edit', managerOnly, async (req, res) => {
 });
 
 // POST: Save changes to an Order.
-app.post('/orders/:id/edit', managerOnly, async (req, res) => {
+app.post('/orders/:id/edit', signedIn, async (req, res) => {
   const back =
     `/orders/${encodeURIComponent(req.params.id)}/edit`;
 

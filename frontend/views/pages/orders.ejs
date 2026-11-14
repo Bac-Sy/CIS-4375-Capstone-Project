@@ -65,7 +65,7 @@
                             <td class="num"><span class="qty <%= r.quantity_change < 0 ? 'neg' : 'pos' %>"><%= fmt.signed(r.quantity_change) %></span></td>
                             <td><%= r.employee || 'N/A' %></td>
                             <td class="menu-cell">
-                              <%- include('../template/rowmenu', { menuLabel: 'Actions for order #' + r.invoice_id, menuItems: (r.invoice_id && Role === 'Manager') ? [
+                              <%- include('../template/rowmenu', { menuLabel: 'Actions for order #' + r.invoice_id, menuItems: (r.invoice_id && authenticated) ? [
                                 { label: 'Edit order', href: '/orders/' + r.invoice_id + '/edit', icon: 'edit' },
                                 Role === 'Manager' && { label: 'Delete order', action: '/orders/' + r.invoice_id + '/delete', icon: 'delete', danger: true,
                                   confirm: 'Delete order #' + r.invoice_id + ' (' + r.transaction_type + ', ' + r.product + ' ' + r.size + ' / ' + r.color + ')? This reverses its stock change.',
