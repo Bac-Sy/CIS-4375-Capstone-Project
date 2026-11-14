@@ -65,7 +65,7 @@
                     <span class="filter-pair">
                     <span class="filter-label">Stock</span>
                     <nav class="pills" aria-label="Stock level">
-                      <% [pill('stock', '', 'All'), pill('stock', 'low', 'Low stock (' + c.low + ')'), pill('stock', 'out', 'Out of stock (' + c.out + ')'), pill('stock', 'in', 'In stock (' + c.in + ')')].forEach(function(p) { %>
+                      <% [pill('stock', '', 'All items'), pill('stock', 'low', 'Low stock only (' + c.low + ')'), pill('stock', 'out', 'Out of stock (' + c.out + ')'), pill('stock', 'in', 'In stock (' + c.in + ')')].forEach(function(p) { %>
                         <a href="<%= p.href %>" class="<%= p.on ? 'active' : '' %>"<% if (p.on) { %> aria-current="true"<% } %>><%= p.label %></a>
                       <% }); %>
                     </nav>
