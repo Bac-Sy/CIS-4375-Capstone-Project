@@ -1,3 +1,7 @@
+<%
+  const store = typeof storeSettings !== 'undefined' && storeSettings ? storeSettings : null;
+  const isManager = typeof Role !== 'undefined' && Role === 'Manager';
+%>
 <!doctype html>
 <html lang="en">
     <head>
@@ -16,18 +20,77 @@
                   <h1>Settings</h1>
                 </header>
 
-                <section class="panel">
-                  <% if (!authenticated) { %>
-                    <p style="padding:1.25rem; margin:0;">You are not signed in. <a href="/login">Sign in</a> to view your real profile from MySQL.</p>
-                  <% } else { %>
-                  <dl class="details">
-                    <dt>Name</dt><dd><%= user.name %></dd>
-                    <dt>Username</dt><dd><%= user.username %></dd>
-                    <dt>Email</dt><dd><%= user.email || 'N/A' %></dd>
-                    <dt>Role</dt><dd><%= user.role || 'N/A' %></dd>
-                  </dl>
-                  <% } %>
-                </section>
+                <% if (!authenticated) { %>
+                  <section class="card">
+                    <p style="margin:0">You are not signed in. <a href="/login">Sign in</a> to see your account and settings.</p>
+                  </section>
+                <% } else { %>
+                <div class="settings-grid">
+                  <div class="settings-col">
+                    <section class="card" aria-labelledby="accountTitle">
+                      <h2 id="accountTitle">My account</h2>
+                      <div class="kv"><span>Name</span><strong><%= user.name %></strong></div>
+                      <div class="kv"><span>Username</span><strong><%= user.username %></strong></div>
+                      <div class="kv"><span>Email</span><strong><%= user.email || 'N/A' %></strong></div>
+                      <div class="kv"><span>Role</span><strong><%= user.role || 'N/A' %></strong></div>
+                      <p class="hint" style="margin-top:.8rem">To change your name, email or role, ask a manager (Employees → ⋯ → Edit employee).</p>
+                    </section>
+
+                    <section class="card" aria-labelledby="signedInTitle">
+                      <h2 id="signedInTitle">Signed in</h2>
+                      <form action="/logout" method="POST" class="inline-number">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="btn btn-outline-danger">Log out</button>
+                        <span class="hint" style="margin:0">Ends your session on this device.</span>
+                      </form>
+                    </section>
+                  </div>
+
+                  <div class="settings-col">
+                    <section class="card" aria-labelledby="passwordTitle">
+                      <h2 id="passwordTitle">Change my password</h2>
+                      <form action="/settings/password" method="POST" autocomplete="off">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="text" name="username" value="<%= user.username %>" autocomplete="username" hidden>
+                        <div class="mb-3">
+                          <label for="Current_Password" class="form-label">Current password</label>
+                          <input type="password" id="Current_Password" name="Current_Password" class="form-control" autocomplete="current-password" required>
+                        </div>
+                        <div class="mb-3">
+                          <label for="New_Password" class="form-label">New password</label>
+                          <input type="password" id="New_Password" name="New_Password" class="form-control" minlength="8" maxlength="128" autocomplete="new-password" required>
+                          <span class="hint">At least 8 characters.</span>
+                        </div>
+                        <div class="mb-3">
+                          <label for="Confirm_Password" class="form-label">Confirm new password</label>
+                          <input type="password" id="Confirm_Password" name="Confirm_Password" class="form-control" minlength="8" maxlength="128" autocomplete="new-password" required>
+                        </div>
+                        <button type="submit" class="scc-btn">Update password</button>
+                      </form>
+                    </section>
+
+                    <% if (isManager) { %>
+                    <section class="card" aria-labelledby="storeTitle">
+                      <div class="card-head"><h2 id="storeTitle">Store settings</h2><span class="hint" style="margin:0">Managers only</span></div>
+                      <% if (store) { %>
+                        <form action="/settings/store" method="POST">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                          <label for="Low_Stock_Threshold" class="form-label">Low stock threshold</label>
+                          <div class="inline-number">
+                            <input type="number" id="Low_Stock_Threshold" name="Low_Stock_Threshold" class="form-control" min="0" max="1000" step="1" value="<%= store.low_stock_threshold %>" required>
+                            <span>units or fewer</span>
+                          </div>
+                          <span class="hint">Items at or below this are highlighted on Inventory and listed under Low stock on the Dashboard.</span>
+                          <button type="submit" class="scc-btn">Save</button>
+                        </form>
+                      <% } else { %>
+                        <p class="empty" style="margin:0">Store settings couldn’t be loaded. Check that the Flask API is running.</p>
+                      <% } %>
+                    </section>
+                    <% } %>
+                  </div>
+                </div>
+                <% } %>
 
                 <%- include('../template/footer'); %>
             </main>

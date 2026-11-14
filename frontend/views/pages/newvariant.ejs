@@ -1,101 +1,148 @@
-
+<%
+  // Add variants: step 1 picks sizes and colors, step 2 has one row per size/color combination.
+  // Every combination is rendered here; the page script hides the rows whose size or color isn't picked.
+  const sizeList = typeof sizes !== 'undefined' && Array.isArray(sizes) ? sizes : [];
+  const colorList = typeof colors !== 'undefined' && Array.isArray(colors) ? colors : [];
+  const locationList = typeof locations !== 'undefined' && Array.isArray(locations) ? locations : [];
+  const existingCombos = new Set(typeof existing !== 'undefined' && Array.isArray(existing) ? existing : []);
+  const firstLocation = locationList[0] ? String(locationList[0].Location_ID) : '';
+%>
 <!doctype html>
 <html lang="en">
 <head>
-  <%- include('../template/head', { title: 'Add Variant' }) %>
+  <%- include('../template/head', { title: 'Add variants' }) %>
 </head>
 <body>
 <div class="app">
-  <%- include('../template/nav', { active: 'manage' }) %>
+  <%- include('../template/nav', { active: 'inventory' }) %>
   <main class="content">
     <%- include('../template/topbar') %>
     <%- include('../template/messages') %>
 
+    <a href="/inventory#p<%= product.Product_ID %>" class="back-link">← Back to Inventory</a>
     <header class="page-header">
-      <h1>Add Size / Color Variant</h1>
-      <p>Product: <strong><%= product.Name %></strong></p>
+      <h1>Add variants</h1>
+      <p class="page-sub">Product: <strong><%= product.Name %></strong>. Pick sizes and colors, then check the combinations you have and fill in each one.</p>
     </header>
 
-    <section class="panel form-panel">
-      <form action="/products/<%= product.Product_ID %>/variants"
-            method="POST"
-            data-confirm="Add this product variant?"
-            data-confirm-button="Add variant">
+    <form action="/products/<%= product.Product_ID %>/variants" method="POST" id="variantForm">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="variant-layout">
 
-        <input type="hidden" name="_csrf"
-               value="<%= csrfToken %>">
-
-        <div class="mb-3">
-          <label class="form-label" for="Size_ID">Size</label>
-          <select name="Size_ID" id="Size_ID"
-                  class="form-select" required>
-            <option value="">Select size</option>
-            <% sizes.forEach(function(s) { %>
-              <option value="<%= s.Size_ID %>"><%= s.Size %></option>
+        <section class="box box-pad" aria-labelledby="step1">
+          <h2 class="box-title" id="step1">Step 1: sizes and colors</h2>
+          <fieldset class="chip-group">
+            <legend>Sizes</legend>
+            <% sizeList.forEach(function(s) { %>
+              <label class="chip-check"><input type="checkbox" data-pick="size" value="<%= s.Size_ID %>"><span><%= s.Size %></span></label>
             <% }); %>
-          </select>
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label" for="Color_ID">Color</label>
-          <select name="Color_ID" id="Color_ID"
-                  class="form-select" required>
-            <option value="">Select color</option>
-            <% colors.forEach(function(c) { %>
-              <option value="<%= c.Color_ID %>"><%= c.Color %></option>
+            <% if (!sizeList.length) { %><p class="empty">No sizes yet. Add them on Manage catalog.</p><% } %>
+          </fieldset>
+          <fieldset class="chip-group">
+            <legend>Colors</legend>
+            <% colorList.forEach(function(c) { %>
+              <label class="chip-check"><input type="checkbox" data-pick="color" value="<%= c.Color_ID %>"><span><%= c.Color %></span></label>
             <% }); %>
-          </select>
-        </div>
+            <% if (!colorList.length) { %><p class="empty">No colors yet. Add them on Manage catalog.</p><% } %>
+          </fieldset>
+          <p class="empty" style="font-size:.9rem">Every size and color pair you pick shows up as a row on the right. Check only the ones this product actually comes in.</p>
+        </section>
 
-        <div class="mb-3">
-          <label class="form-label" for="Location_ID">Location</label>
-          <select name="Location_ID" id="Location_ID"
-                  class="form-select" required>
-            <option value="">Select location</option>
-            <% locations.forEach(function(l) { %>
-              <option value="<%= l.Location_ID %>">
-                <%= l.Location_Name %>
-              </option>
-            <% }); %>
-          </select>
-        </div>
+        <section class="box" aria-labelledby="step2">
+          <div class="variant-head">
+            <h2 id="step2">Step 2: check the combinations you have</h2>
+            <p class="variant-count" id="variantCount" aria-live="polite">Pick at least one size and one color.</p>
+          </div>
 
-        <div class="mb-3">
-          <label class="form-label" for="Price">Price</label>
-          <input type="number" name="Price" id="Price"
-                 class="form-control" min="0" step="0.01"
-                 required>
-        </div>
+          <div class="same-for-all">
+            <label class="lbl" for="Location_ID">Location</label>
+            <select class="form-select" id="Location_ID" name="Location_ID">
+              <% locationList.forEach(function(l) { %>
+                <option value="<%= l.Location_ID %>"><%= l.Location_Name %></option>
+              <% }); %>
+            </select>
+            <label class="check-label"><input type="checkbox" name="same_location" value="1" id="sameLocation" checked> Same location for all variants</label>
 
-        <div class="mb-3">
-          <label class="form-label" for="Cost">Cost</label>
-          <input type="number" name="Cost" id="Cost"
-                 class="form-control" min="0" step="0.01"
-                 required>
-        </div>
+            <span class="lbl">Price / cost</span>
+            <span class="pair">
+              <label class="visually-hidden" for="Price">Price for all variants</label>
+              <input class="form-control money" id="Price" name="Price" inputmode="decimal" placeholder="Price">
+              <label class="visually-hidden" for="Cost">Cost for all variants</label>
+              <input class="form-control money" id="Cost" name="Cost" inputmode="decimal" placeholder="Cost">
+            </span>
+            <label class="check-label"><input type="checkbox" name="same_price" value="1" id="samePrice"> Same price and cost for all variants</label>
+          </div>
 
-        <div class="mb-3">
-          <label class="form-label" for="Quantity">
-            Starting quantity
-          </label>
-          <input type="number" name="Quantity" id="Quantity"
-                 class="form-control" min="0" step="1"
-                 value="0" required>
-        </div>
+          <div class="table-scroll">
+            <table class="data-table combo-table">
+              <caption class="visually-hidden">Size and color combinations</caption>
+              <thead>
+                <tr>
+                  <th scope="col"><span class="visually-hidden">Add</span></th>
+                  <th scope="col">Size / color</th>
+                  <th scope="col">Starting stock</th>
+                  <th scope="col">Location</th>
+                  <th scope="col">Price</th>
+                  <th scope="col">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="noCombos"><td colspan="6" class="empty-cell">Pick sizes and colors in step 1 to see the combinations here.</td></tr>
+                <% sizeList.forEach(function(s) { colorList.forEach(function(c) { %>
+                  <% const combo = s.Size_ID + '-' + c.Color_ID; const key = s.Size_ID + '_' + c.Color_ID; const label = s.Size + ' / ' + c.Color; %>
+                  <% if (existingCombos.has(combo)) { %>
+                    <tr class="combo-row exists" data-size="<%= s.Size_ID %>" data-color="<%= c.Color_ID %>" data-exists="1">
+                      <td></td>
+                      <td><%= label %></td>
+                      <td colspan="4"><span class="tag tag-outline">Already exists</span></td>
+                    </tr>
+                  <% } else { %>
+                    <tr class="combo-row" data-size="<%= s.Size_ID %>" data-color="<%= c.Color_ID %>">
+                      <td>
+                        <input type="checkbox" class="combo-check" name="combo" value="<%= combo %>" id="c<%= key %>" aria-label="Add <%= label %>">
+                        <input type="hidden" name="label_<%= key %>" value="<%= label %>">
+                      </td>
+                      <td><label for="c<%= key %>" style="font-weight:700;margin:0;cursor:pointer"><%= label %></label></td>
+                      <td class="fields"><input class="form-control stock" name="stock_<%= key %>" value="0" inputmode="numeric" aria-label="Starting stock for <%= label %>"></td>
+                      <td class="fields">
+                        <span class="same-value" data-same="location"></span>
+                        <select class="form-select" name="location_<%= key %>" data-own="location" aria-label="Location for <%= label %>">
+                          <% locationList.forEach(function(l) { %>
+                            <option value="<%= l.Location_ID %>" <%= String(l.Location_ID) === firstLocation ? 'selected' : '' %>><%= l.Location_Name %></option>
+                          <% }); %>
+                        </select>
+                      </td>
+                      <td class="fields">
+                        <span class="same-value" data-same="price"></span>
+                        <input class="form-control money" name="price_<%= key %>" data-own="price" inputmode="decimal" placeholder="0.00" aria-label="Price for <%= label %>">
+                      </td>
+                      <td class="fields">
+                        <span class="same-value" data-same="cost"></span>
+                        <input class="form-control money" name="cost_<%= key %>" data-own="cost" inputmode="decimal" placeholder="0.00" aria-label="Cost for <%= label %>">
+                      </td>
+                      <td class="off-note" hidden colspan="4">Unchecked: won’t be created</td>
+                    </tr>
+                  <% } %>
+                <% }); }); %>
+              </tbody>
+            </table>
+          </div>
 
-        <button type="submit" class="btn btn-primary">
-          Add Variant and Stock
-        </button>
-        <a href="/manage" class="btn btn-outline-secondary">
-          Cancel
-        </a>
-      </form>
-    </section>
+          <div class="variant-foot">
+            <span class="empty" id="footNote"></span>
+            <span>
+              <a href="/inventory#p<%= product.Product_ID %>" class="btn btn-outline-secondary">Cancel</a>
+              <button type="submit" class="scc-btn" id="addButton">Add variants</button>
+            </span>
+          </div>
+        </section>
+      </div>
+    </form>
 
     <%- include('../template/footer') %>
   </main>
 </div>
 <%- include('../template/scripts') %>
-<%- include('../template/confirm') %>
+<script src="/js/add-variants.js?v=4"></script>
 </body>
 </html>

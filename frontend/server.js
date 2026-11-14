@@ -6,7 +6,7 @@
 
 const crypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
-const { buildDonut, buildTrend } = require('./lib/charts');
+const { buildDonut, buildFlow } = require('./lib/charts');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -217,6 +217,10 @@ function page(req, res, view, values = {}, status = 200) {
     ...values
   });
 }
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function errorPage(req, res, status, title, detail) {
   return page(req, res, 'error', { title, detail }, status);
 }
@@ -256,10 +260,13 @@ app.get('/', pageAccess, async (req, res) => {
   } catch (err) {
     message = [message, apiError(err, 'Live dashboard metrics are unavailable.')].filter(Boolean).join(' ');
   }
+  // Recent orders card: Sales by default, with Restocks and Adjustments as tabs (?recent=Restock).
+  const recentType = ['Sale', 'Restock', 'Adjustment'].includes(req.query.recent) ? req.query.recent : 'Sale';
   return page(req, res, 'index', {
     api, data,
     donut: buildDonut(data.sales?.by_category || []),
-    trend: buildTrend(Array.isArray(data.trend) ? data.trend : []),
+    flow: buildFlow(data.stock_weeks),
+    recentType,
     message
   });
 });
@@ -412,6 +419,7 @@ async function loadInventory() {
       Size: x.Size ?? x.size,
       Color: x.Color ?? x.color,
       Location: x.Location ?? x.location,
+      Category: x.Category ?? x.category ?? '',
       Quantity: x.Quantity ?? x.quantity,
       Price: x.Price ?? x.price
     }));
@@ -422,28 +430,67 @@ async function loadInventory() {
     return legacyInventory();
   }
 }
+// Groups the inventory rows under their product, so each product shows its total and its sizes/colors.
+// Products that have no variants yet are added from the product list, so they don't disappear.
+function groupInventory(rows, products, categories, threshold) {
+  const categoryNames = new Map(arrayData(categories).map(c => [String(c.Category_ID), c.Category]));
+  const groups = new Map();
+  for (const row of rows) {
+    const key = String(row.Product_ID ?? row.Product);
+    if (!groups.has(key)) {
+      groups.set(key, { id: row.Product_ID, name: row.Product || 'Unknown product', category: row.Category || '', variants: [] });
+    }
+    groups.get(key).variants.push(row);
+  }
+  for (const p of arrayData(products)) {
+    const key = String(p.Product_ID);
+    if (groups.has(key)) {
+      if (!groups.get(key).category) groups.get(key).category = categoryNames.get(String(p.Category_ID)) || '';
+    } else {
+      groups.set(key, { id: p.Product_ID, name: p.Name, category: categoryNames.get(String(p.Category_ID)) || '', variants: [] });
+    }
+  }
+  return [...groups.values()].map(g => ({
+    ...g,
+    total: g.variants.reduce((sum, v) => sum + (Number(v.Quantity) || 0), 0),
+    low: g.variants.filter(v => Number(v.Quantity) <= threshold).length
+  })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
 app.get('/inventory', pageAccess, async (req, res) => {
   try {
-    const result = await loadInventory();
-    return page(req, res, 'inventory', { ...result, dataAvailable: true });
+    const [result, products, categories] = await Promise.all([
+      loadInventory(),
+      apiGet('/api/products').catch(() => []),
+      apiGet('/api/categories').catch(() => [])
+    ]);
+    const groups = groupInventory(result.rows, products, categories, result.threshold);
+    // ?adjust=<Variant_ID> opens that row in Adjust stock mode (chosen from its ⋯ menu).
+    const adjusting = /^[1-9]\d*$/.test(String(req.query.adjust || '')) ? String(req.query.adjust) : null;
+    return page(req, res, 'inventory', { ...result, groups, adjusting, dataAvailable: true });
   } catch (err) {
     console.error('Inventory load failed:', err.message);
     return page(req, res, 'inventory', {
-      items: [], rows: [], threshold: 5, dataAvailable: false,
+      items: [], rows: [], groups: [], adjusting: null, threshold: 5, dataAvailable: false,
       message: apiError(err, 'Inventory could not be loaded.')
     });
   }
 });
 app.post('/inventory/:variantId/adjust', signedIn, async (req, res) => {
+  const back = `/inventory#v${encodeURIComponent(req.params.variantId)}`;
+  const quantity = String(req.body.New_Quantity ?? '').trim();
+  if (!/^\d+$/.test(quantity) || !Number.isSafeInteger(Number(quantity))) {
+    return flashAndRedirect(req, res, 'Enter the new stock count as a whole number (0 or more).',
+      `/inventory?adjust=${encodeURIComponent(req.params.variantId)}#v${encodeURIComponent(req.params.variantId)}`);
+  }
   try {
     const result = await apiPut('/adjust/inventory', {
       Variant_ID: req.params.variantId,
-      New_Quantity: req.body.New_Quantity,
+      New_Quantity: Number(quantity),
       Employee_ID: req.session.user.id
     });
-    return flashAndRedirect(req, res, result?.message || 'Inventory adjusted.', '/inventory');
+    return flashAndRedirect(req, res, result?.message || 'Inventory adjusted.', back);
   } catch (err) {
-    return flashAndRedirect(req, res, apiError(err, 'Unable to adjust inventory.'), '/inventory');
+    return flashAndRedirect(req, res, apiError(err, 'Unable to adjust inventory.'), back);
   }
 });
 
@@ -612,10 +659,25 @@ async function findOrder(id) {
   ) || null;
 }
 
+// EDIT ORDER: the type, item (product / size / color), date and quantity can all be corrected.
+// The API moves the stock when the quantity or item changes. "Recorded by" can't be changed.
+async function loadOrderForm(id) {
+  const [order, inventory, allTypes] = await Promise.all([
+    findOrder(id),
+    loadInventory(),
+    apiGet('/show/all/transaction/types')
+  ]);
+  const types = arrayData(allTypes).filter(t => ['Sale', 'Restock', 'Adjustment'].includes(t.Transaction_Type));
+  const variants = inventory.items
+    .filter(v => Number.isSafeInteger(Number(v.variant_id)) && Number(v.variant_id) > 0)
+    .sort((a, b) => String(a.product).localeCompare(String(b.product)) || String(a.size).localeCompare(String(b.size)) || String(a.color).localeCompare(String(b.color)));
+  return { order, types, variants };
+}
+
 // GET: Display the Edit Order page.
 app.get('/orders/:id/edit', signedIn, async (req, res) => {
   try {
-    const order = await findOrder(req.params.id);
+    const { order, types, variants } = await loadOrderForm(req.params.id);
 
     if (!order) {
       return errorPage(
@@ -625,7 +687,7 @@ app.get('/orders/:id/edit', signedIn, async (req, res) => {
       );
     }
 
-    return page(req, res, 'edit-order', { order });
+    return page(req, res, 'edit-order', { order, types, variants, today: localToday() });
 
   } catch (err) {
     return errorPage(
@@ -642,65 +704,52 @@ app.post('/orders/:id/edit', signedIn, async (req, res) => {
     `/orders/${encodeURIComponent(req.params.id)}/edit`;
 
   try {
-    const rawQuantity = String(
-      req.body.Quantity_Change ?? ''
-    ).trim();
+    const rawQuantity = String(req.body.Quantity_Change ?? '').trim();
+    const typeId = String(req.body.Transaction_Type_ID ?? '').trim();
+    const variantId = String(req.body.Variant_ID ?? '').trim();
+    const orderDate = String(req.body.Date ?? '').trim();
 
     // Quantity must be a nonzero whole number.
     if (!/^-?\d+$/.test(rawQuantity) ||
         !Number.isSafeInteger(Number(rawQuantity)) ||
         Number(rawQuantity) === 0) {
-
-      return flashAndRedirect(
-        req, res,
-        'Enter a valid nonzero whole-number quantity.',
-        back
-      );
+      return flashAndRedirect(req, res, 'Enter a valid nonzero whole-number quantity.', back);
+    }
+    if (!/^[1-9]\d*$/.test(typeId) || !/^[1-9]\d*$/.test(variantId)) {
+      return flashAndRedirect(req, res, 'Choose a transaction type and an item.', back);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(orderDate) || Number.isNaN(Date.parse(orderDate)) || orderDate > localToday()) {
+      return flashAndRedirect(req, res, 'Enter a valid date that is not in the future.', back);
     }
 
     const quantity = Number(rawQuantity);
-    const order = await findOrder(req.params.id);
+    const { order, types } = await loadOrderForm(req.params.id);
 
     if (!order) {
-      return errorPage(
-        req, res, 404,
-        'Order not found',
-        'The selected order could not be found.'
-      );
+      return errorPage(req, res, 404, 'Order not found', 'The selected order could not be found.');
     }
 
-    const type = String(
-      order.transaction_type || ''
-    ).toLowerCase();
+    const selected = types.find(t => String(t.Transaction_Type_ID) === typeId);
+    if (!selected) return flashAndRedirect(req, res, 'Choose Sale, Restock or Adjustment.', back);
 
-    // Sales reduce inventory. Restocks increase it.
-    if ((type.includes('sale') && quantity >= 0) ||
-        (type === 'restock' && quantity <= 0)) {
-
-      return flashAndRedirect(
-        req, res,
-        'Sales must be negative and Restocks must be positive.',
-        back
-      );
+    // Sales reduce inventory. Restocks increase it. Adjustments can go either way.
+    const type = selected.Transaction_Type;
+    if ((type === 'Sale' && quantity >= 0) || (type === 'Restock' && quantity <= 0)) {
+      return flashAndRedirect(req, res, 'Sales must be negative and Restocks must be positive.', back);
     }
 
     const result = await apiPut('/update/invoice', {
       Invoice_ID: req.params.id,
+      Transaction_Type_ID: Number(typeId),
+      Variant_ID: Number(variantId),
+      Date: orderDate,
       Quantity_Change: quantity
     });
 
-    return flashAndRedirect(
-      req, res,
-      result?.message || 'Order updated successfully.',
-      '/orders'
-    );
+    return flashAndRedirect(req, res, result?.message || 'Order updated successfully.', '/orders');
 
   } catch (err) {
-    return flashAndRedirect(
-      req, res,
-      apiError(err, 'Unable to update order.'),
-      back
-    );
+    return flashAndRedirect(req, res, apiError(err, 'Unable to update order.'), back);
   }
 });
 
@@ -754,9 +803,43 @@ app.get('/employees', pageAccess, async (req, res) => {
     });
   }
 });
-app.get('/settings', pageAccess, (req, res) => page(req, res, 'settings', {
-  message: req.session.user?.id ? res.locals.message : 'Sign in to see your real account details.'
-}));
+// SETTINGS: your account, log out, change your own password, and (managers) the low stock threshold.
+app.get('/settings', pageAccess, async (req, res) => {
+  if (!req.session.user?.id) {
+    return page(req, res, 'settings', { message: 'Sign in to see your real account details.', storeSettings: null });
+  }
+  let storeSettings = null;
+  if (String(req.session.user.role).toLowerCase() === 'manager') {
+    try { storeSettings = await apiGet('/settings/store'); } catch (_) { storeSettings = null; }
+  }
+  return page(req, res, 'settings', { storeSettings });
+});
+app.post('/settings/password', signedIn, async (req, res) => {
+  const current = String(req.body.Current_Password ?? '');
+  const next = String(req.body.New_Password ?? '');
+  const confirmation = String(req.body.Confirm_Password ?? '');
+  if (!current || !next) return flashAndRedirect(req, res, 'Enter your current password and a new password.', '/settings');
+  if (next.length < 8 || next.length > 128) return flashAndRedirect(req, res, 'The new password must be between 8 and 128 characters.', '/settings');
+  if (next !== confirmation) return flashAndRedirect(req, res, 'The new passwords do not match.', '/settings');
+  try {
+    const result = await apiPost('/change/password', { Current_Password: current, New_Password: next });
+    return flashAndRedirect(req, res, result?.message || 'Your password was changed.', '/settings');
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, 'Unable to change your password.'), '/settings');
+  }
+});
+app.post('/settings/store', managerOnly, async (req, res) => {
+  const value = String(req.body.Low_Stock_Threshold ?? '').trim();
+  if (!/^\d+$/.test(value) || Number(value) > 1000) {
+    return flashAndRedirect(req, res, 'Enter a low stock threshold between 0 and 1000.', '/settings');
+  }
+  try {
+    const result = await apiPut('/settings/store', { low_stock_threshold: Number(value) });
+    return flashAndRedirect(req, res, result?.message || 'Store settings saved.', '/settings');
+  } catch (err) {
+    return flashAndRedirect(req, res, apiError(err, 'Unable to save store settings.'), '/settings');
+  }
+});
 
 
 async function findEmployee(id) {
@@ -1047,12 +1130,19 @@ app.get('/manage', managerOnly, async (req, res) => {
       apiGet('/show/all/sizes')
     ]);
 
+    // Variants aren't listed here any more (they're managed on Inventory); they're only counted per product.
+    const variantCounts = {};
+    for (const v of arrayData(variants)) variantCounts[v.Product_ID] = (variantCounts[v.Product_ID] || 0) + 1;
+    // ?rename=colors-3 opens that color or size as a rename box (chosen from its ⋯ menu).
+    const renaming = /^(colors|sizes)-[1-9]\d*$/.test(String(req.query.rename || '')) ? String(req.query.rename) : null;
+
     return page(req, res, 'manage', {
-      suppliers,
-      categories,
-      locations,
-      products,
-      variants,
+      suppliers: arrayData(suppliers),
+      categories: arrayData(categories),
+      locations: arrayData(locations),
+      products: arrayData(products),
+      variantCounts,
+      renaming,
       colors: arrayData(colors),
       sizes: arrayData(sizes)
     });
@@ -1100,8 +1190,8 @@ app.post('/manage/add/:kind', managerOnly, async (req, res) => {
   if (!config) {
     return errorPage(
       req, res, 404,
-      'Invalid catalogue type',
-      'This type of catalogue record cannot be added.'
+      'Invalid catalog type',
+      'This type of catalog record cannot be added.'
     );
   }
 
@@ -1195,13 +1285,17 @@ app.post('/manage/rename/:kind/:id', managerOnly, async (req, res) => {
   }
 });
 
+// ADD VARIANTS: pick sizes and colors, then check each size/color combination the product comes in.
+// Every checked row has its own starting stock, location, price and cost, unless "same for all" is ticked.
+// Combinations the product already has are shown as "Already exists" and can't be added twice.
 app.get('/products/:id/variants/new', managerOnly, async (req, res) => {
   try {
-    const [products, sizes, colors, locations] = await Promise.all([
+    const [products, sizes, colors, locations, variants] = await Promise.all([
       apiGet('/api/products'),
       apiGet('/show/all/sizes'),
       apiGet('/show/all/colors'),
-      apiGet('/api/locations')
+      apiGet('/api/locations'),
+      apiGet('/api/product_variants')
     ]);
 
     const product = arrayData(products).find(
@@ -1215,11 +1309,16 @@ app.get('/products/:id/variants/new', managerOnly, async (req, res) => {
       );
     }
 
+    const existing = arrayData(variants)
+      .filter(v => String(v.Product_ID) === String(product.Product_ID))
+      .map(v => `${v.Size_ID}-${v.Color_ID}`);
+
     return page(req, res, 'newvariant', {
       product,
       sizes: arrayData(sizes),
       colors: arrayData(colors),
-      locations: arrayData(locations)
+      locations: arrayData(locations),
+      existing
     });
   } catch (err) {
     return errorPage(
@@ -1231,84 +1330,86 @@ app.get('/products/:id/variants/new', managerOnly, async (req, res) => {
 
 
 app.post('/products/:id/variants', managerOnly, async (req, res) => {
-  const productId = Number(req.params.id);
-  const sizeId = Number(req.body.Size_ID);
-  const colorId = Number(req.body.Color_ID);
-  const locationId = String(req.body.Location_ID || '').trim();
-  const priceText = String(req.body.Price ?? '');
-  const costText = String(req.body.Cost ?? '');
-  const quantityText = String(req.body.Quantity ?? '');
+  const back = `/products/${encodeURIComponent(req.params.id)}/variants/new`;
+  const validId = x => /^[1-9]\d*$/.test(String(x)) && Number.isSafeInteger(Number(x));
+  const validMoney = x => /^(0|[1-9]\d{0,7})(\.\d{1,2})?$/.test(String(x).replace(/^\$/, '').trim());
+  const money = x => Number(String(x).replace(/^\$/, '').trim());
+  const productId = req.params.id;
+  if (!validId(productId)) return flashAndRedirect(req, res, 'Choose a valid product.', '/manage');
 
-  const validId = x =>
-    /^[1-9]\d*$/.test(String(x)) &&
-    Number.isSafeInteger(Number(x));
-
-  const validMoney = x =>
-    /^(0|[1-9]\d{0,7})(\.\d{1,2})?$/.test(x);
-
-  if (!validId(productId) || !validId(sizeId) ||
-      !validId(colorId) || !validId(locationId) ||
-      !validMoney(priceText) || !validMoney(costText) ||
-      !/^\d+$/.test(quantityText) ||
-      !Number.isSafeInteger(Number(quantityText))) {
-    return flashAndRedirect(
-      req, res, 'Enter valid variant and stock details.',
-      `/products/${encodeURIComponent(req.params.id)}/variants/new`
-    );
+  const combos = [].concat(req.body.combo || []).map(String).filter(c => /^[1-9]\d*-[1-9]\d*$/.test(c));
+  if (!combos.length) {
+    return flashAndRedirect(req, res, 'Check at least one size and color combination to add.', back);
   }
 
-  let variantId = null;
+  const sameLocation = req.body.same_location === '1';
+  const samePrice = req.body.same_price === '1';
+  const planned = [];
+  const problems = [];
+  for (const combo of [...new Set(combos)]) {
+    const [sizeId, colorId] = combo.split('-');
+    const key = `${sizeId}_${colorId}`;
+    const label = String(req.body[`label_${key}`] || combo).slice(0, 60);
+    const stock = String(req.body[`stock_${key}`] ?? '0').trim() || '0';
+    const location = String(sameLocation ? req.body.Location_ID : req.body[`location_${key}`] ?? '').trim();
+    const price = String(samePrice ? req.body.Price : req.body[`price_${key}`] ?? '').trim();
+    const cost = String(samePrice ? req.body.Cost : req.body[`cost_${key}`] ?? '').trim();
+    if (!/^\d+$/.test(stock) || !Number.isSafeInteger(Number(stock))) problems.push(`${label}: starting stock must be a whole number`);
+    else if (!validId(location)) problems.push(`${label}: choose a location`);
+    else if (!validMoney(price) || !validMoney(cost)) problems.push(`${label}: enter a price and cost like 32.00`);
+    else planned.push({ sizeId: Number(sizeId), colorId: Number(colorId), label, stock: Number(stock),
+      location: Number(location), price: money(price), cost: money(cost) });
+  }
+  if (problems.length) {
+    return flashAndRedirect(req, res, `Nothing was added. ${problems.slice(0, 3).join('; ')}${problems.length > 3 ? '; …' : ''}.`, back);
+  }
 
+  // Check again for combinations that already exist, in case someone added one in the meantime.
+  let existing;
   try {
-    const created = await apiPost('/api/product_variants', {
-      Product_ID: productId,
-      Size_ID: sizeId,
-      Color_ID: colorId,
-      Location_ID: locationId,
-      Price: Number(priceText),
-      Cost: Number(costText)
-    });
-
-    variantId = Number(created.Variant_ID);
-
-    if (!validId(variantId)) {
-      return flashAndRedirect(
-        req, res,
-        'Variant creation returned no valid ID. Check Manage Catalogue.',
-        '/manage'
-      );
-    }
-
-    await apiPost('/api/inventory', {
-      Variant_ID: variantId,
-      Quantity: 0
-    });
-
-    const startingQuantity = Number(quantityText);
-
-    if (startingQuantity > 0) {
-      await apiPut('/adjust/inventory', {
-        Variant_ID: variantId,
-        New_Quantity: startingQuantity
-      });
-    }
-
-    return flashAndRedirect(
-      req, res, 'Product variant and stock created.',
-      '/inventory'
-    );
+    existing = new Set(arrayData(await apiGet('/api/product_variants'))
+      .filter(v => String(v.Product_ID) === String(productId))
+      .map(v => `${v.Size_ID}-${v.Color_ID}`));
   } catch (err) {
-    const message = variantId
-      ? `Variant #${variantId} was created, but inventory setup may be incomplete. Check the records before retrying.`
-      : apiError(err, 'Unable to create the variant.');
-
-    return flashAndRedirect(
-      req, res, message,
-      variantId
-        ? '/manage'
-        : `/products/${encodeURIComponent(req.params.id)}/variants/new`
-    );
+    return flashAndRedirect(req, res, apiError(err, 'Unable to check the existing variants.'), back);
   }
+  const duplicates = planned.filter(p => existing.has(`${p.sizeId}-${p.colorId}`));
+  if (duplicates.length) {
+    return flashAndRedirect(req, res,
+      `Nothing was added: ${duplicates.map(d => d.label).join(', ')} already ${duplicates.length === 1 ? 'exists' : 'exist'}.`, back);
+  }
+
+  const added = [];
+  for (const item of planned) {
+    let variantId = null;
+    try {
+      const created = await apiPost('/api/product_variants', {
+        Product_ID: Number(productId),
+        Size_ID: item.sizeId,
+        Color_ID: item.colorId,
+        Location_ID: item.location,
+        Price: item.price,
+        Cost: item.cost
+      });
+      variantId = Number(created?.Variant_ID);
+      if (!validId(variantId)) throw new ApiError('Variant creation returned no valid ID.', 502, null);
+      await apiPost('/api/inventory', { Variant_ID: variantId, Quantity: 0 });
+      if (item.stock > 0) {
+        await apiPut('/adjust/inventory', { Variant_ID: variantId, New_Quantity: item.stock });
+      }
+      added.push(item.label);
+    } catch (err) {
+      const done = added.length ? `Added ${added.join(', ')}. ` : '';
+      const failed = variantId
+        ? `${item.label} was created, but its stock may not be set. Check it on Inventory.`
+        : `${item.label} could not be added: ${apiError(err, 'the API rejected it.')}`;
+      return flashAndRedirect(req, res, `${done}${failed} Anything after it was not added.`, variantId || added.length ? `/inventory#p${productId}` : back);
+    }
+  }
+
+  return flashAndRedirect(req, res,
+    `Added ${added.length} ${added.length === 1 ? 'variant' : 'variants'}: ${added.join(', ')}.`,
+    `/inventory#p${productId}`);
 });
 
 
@@ -1382,7 +1483,7 @@ app.post('/create/employee', managerOnly, async (req, res) => {
       Email: req.body.Email,
       Password: req.body.Password
     });
-    return flashAndRedirect(req, res, reply?.message || 'Employee created.', '/new/employee');
+    return flashAndRedirect(req, res, reply?.message || 'Employee created.', '/employees');
   } catch (err) {
   return page(req, res, 'newemployee', {
     message: apiError(err, 'Unable to create employee.'),
@@ -1459,9 +1560,10 @@ for (const config of editPages) {
   app.post(`/${config.kind}/:id/delete`, managerOnly, async (req, res) => {
     try {
       await apiDelete(`${config.put}/${encodeURIComponent(req.params.id)}`);
-      return flashAndRedirect(req, res, `${label} deleted.`, '/manage');
+      // Variants are managed on Inventory now; everything else is on Manage catalog.
+      return flashAndRedirect(req, res, `${label} deleted.`, config.kind === 'variants' ? '/inventory' : '/manage');
     } catch (err) {
-      const destination = config.kind === 'products'
+      const destination = config.kind === 'products' || config.kind === 'variants'
         ? `/${config.kind}/${encodeURIComponent(req.params.id)}/edit` : '/manage';
       return flashAndRedirect(req, res, apiError(err, `Unable to delete ${config.key}.`), destination);
     }

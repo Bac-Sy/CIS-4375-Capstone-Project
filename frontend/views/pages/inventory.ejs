@@ -1,6 +1,12 @@
 <%
   // Items at or below this count are highlighted in red.
   const lowStockThreshold = (typeof threshold !== 'undefined' && Number.isFinite(Number(threshold))) ? Number(threshold) : 5;
+  const productGroups = (typeof groups !== 'undefined' && Array.isArray(groups)) ? groups : [];
+  const adjustId = typeof adjusting !== 'undefined' && adjusting ? String(adjusting) : null;
+  const isManager = typeof Role !== 'undefined' && Role === 'Manager';
+  const variantCount = productGroups.reduce((n, g) => n + g.variants.length, 0);
+  const unitCount = productGroups.reduce((n, g) => n + g.total, 0);
+  const money = value => (typeof fmt !== 'undefined' && fmt.money) ? fmt.money(value) : value;
 %>
 <!doctype html>
 <html lang="en">
@@ -16,65 +22,101 @@
                 <%- include('../template/topbar') %>
                 <%- include('../template/messages') %>
 
-                <header class="page-header">
+                <header class="page-header page-header-row">
                   <h1>Inventory</h1>
+                  <span class="muted">Items with <%= lowStockThreshold %> or fewer units are highlighted as low stock.</span>
                 </header>
 
-                <p class="empty">
-                  Items with 5 or fewer units are highlighted as low stock.
-                </p>
-
                 <section class="panel">
-                  <div class="panel-bar"><%= rows.length %> <%= rows.length === 1 ? 'item' : 'items' %></div>
+                  <div class="panel-bar">
+                    <%= productGroups.length %> <%= productGroups.length === 1 ? 'product' : 'products' %>,
+                    <%= variantCount %> <%= variantCount === 1 ? 'variant' : 'variants' %>,
+                    <%= unitCount %> <%= unitCount === 1 ? 'unit' : 'units' %> in stock
+                  </div>
                   <div class="table-scroll">
-                    <table class="data-table">
-                      <caption class="visually-hidden">Inventory by product variant</caption>
+                    <table class="data-table inv-table">
+                      <caption class="visually-hidden">Inventory grouped by product</caption>
                       <thead>
                         <tr>
-                          <th scope="col">Product</th>
-                          <th scope="col">Size</th>
-                          <th scope="col">Color</th>
-                          <th scope="col">Location</th>
-                          <th scope="col" class="num">In stock</th>
-                          <th scope="col">Adjust stock</th>
+                          <th scope="col">Product / variant</th>
+                          <th scope="col">Category / location</th>
+                          <th scope="col" class="num">Price</th>
+                          <th scope="col" class="count">In stock</th>
+                          <th scope="col" class="menu-cell"><span class="visually-hidden">Actions</span></th>
                         </tr>
                       </thead>
                       <tbody>
-                        <% if (rows.length === 0) { %>
-                          <tr><td colspan="6" class="empty-cell">No inventory records yet.</td></tr>
+                        <% if (productGroups.length === 0) { %>
+                          <tr><td colspan="5" class="empty-cell"><%= (typeof dataAvailable !== 'undefined' && !dataAvailable) ? 'Inventory could not be loaded. Check the message above.' : 'No products yet.' %></td></tr>
                         <% } %>
-                        <% rows.forEach(function(row) { %>
-                          <tr>
+                        <% productGroups.forEach(function(group) { %>
+                          <% const gid = String(group.id); %>
+                          <tr class="inv-product" id="p<%= gid %>">
                             <td>
-                              <strong><%= row.Product %></strong>
-                              <% if (authenticated && row.Product_ID != null) { %>
-                                <div><a href="/products/<%= row.Product_ID %>/edit">Edit product</a></div>
-                              <% } %>
-                              <% if (authenticated && row.Variant_ID != null) { %>
-                                <div><a href="/variants/<%= row.Variant_ID %>/edit">Edit variant</a></div>
-                              <% } %>
+                              <div class="inv-name">
+                                <% if (group.variants.length) { %>
+                                  <button type="button" class="inv-toggle" data-collapse="<%= gid %>" aria-expanded="true"
+                                          aria-label="Show or hide the variants of <%= group.name %>">▾</button>
+                                <% } else { %>
+                                  <span class="inv-toggle-spacer"></span>
+                                <% } %>
+                                <strong><%= group.name %></strong>
+                                <% if (group.low) { %><span class="tag tag-red"><%= group.low %> low</span><% } %>
+                              </div>
                             </td>
-                            <td><%= row.Size %></td>
-                            <td><%= row.Color %></td>
-                            <td><%= row.Location || 'Unassigned' %></td>
-                            <td class="num">
-                              <% if (Number(row.Quantity) <= lowStockThreshold) { %>
-                                <span class="tag tag-red"><%= row.Quantity %></span>
-                              <% } else { %>
-                                <%= row.Quantity %>
-                              <% } %>
-                            </td>
-                            <td>
-                              <form action="/inventory/<%= row.Variant_ID %>/adjust" method="POST" class="inline-form"
-                                    data-confirm="Set the stock for <%= row.Product %> (<%= row.Size %>, <%= row.Color %>) to the new count?"
-                                    data-confirm-button="Update stock">
-                                <input type="number" class="form-control" name="New_Quantity" value="<%= row.Quantity %>"
-                                       min="0" step="1" required aria-label="New stock count for <%= row.Product %>">
-                                <button type="submit" class="scc-btn">Save</button>
-                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-</form>
+                            <td class="muted"><%= group.category || 'No category' %> · <%= group.variants.length %> <%= group.variants.length === 1 ? 'variant' : 'variants' %></td>
+                            <td></td>
+                            <% if (group.variants.length) { %>
+                              <td class="count">Total <%= group.total %></td>
+                            <% } else { %>
+                              <td class="count inv-empty muted" style="font-weight:500">
+                                No variants yet.<% if (isManager && group.id != null) { %> <a href="/products/<%= gid %>/variants/new">Add sizes and colors</a><% } %>
+                              </td>
+                            <% } %>
+                            <td class="menu-cell">
+                              <%- include('../template/rowmenu', { menuLabel: 'Actions for ' + group.name, menuItems: group.id == null ? [] : [
+                                authenticated && { label: 'Edit product', href: '/products/' + gid + '/edit', icon: 'edit' },
+                                isManager && { label: 'Add variants', href: '/products/' + gid + '/variants/new', icon: 'add' }
+                              ] }) %>
                             </td>
                           </tr>
+                          <% group.variants.forEach(function(row) { %>
+                            <% const vid = String(row.Variant_ID); const qty = Number(row.Quantity) || 0; const low = qty <= lowStockThreshold; const isAdjusting = adjustId === vid; %>
+                            <tr class="inv-variant<%= low ? ' low' : '' %><%= isAdjusting ? ' adjusting' : '' %>" id="v<%= vid %>" data-parent="<%= gid %>">
+                              <td<%= isAdjusting ? ' style=font-weight:700' : '' %>>
+                                <%= row.Size || '?' %> / <%= row.Color || '?' %>
+                                <% if (low) { %><span class="tag tag-red">Low</span><% } %>
+                              </td>
+                              <td class="muted"><%= row.Location || 'Unassigned' %></td>
+                              <td class="num"><%= row.Price == null ? '' : money(row.Price) %></td>
+                              <% if (isAdjusting && authenticated) { %>
+                                <td class="count">
+                                  <form action="/inventory/<%= vid %>/adjust" method="POST" class="inv-adjust" data-was="<%= qty %>">
+                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                    <div class="inv-adjust-row">
+                                      <button type="button" class="step-btn" data-step="-1" aria-label="One less">−</button>
+                                      <button type="button" class="step-btn" data-step="1" aria-label="One more">+</button>
+                                      <label class="visually-hidden" for="adj-<%= vid %>">New stock count for <%= group.name %>, <%= row.Size %> / <%= row.Color %></label>
+                                      <input type="number" id="adj-<%= vid %>" name="New_Quantity" value="<%= qty %>" min="0" step="1" required>
+                                    </div>
+                                    <div class="inv-adjust-actions">
+                                      <button type="submit" class="scc-btn">Save</button>
+                                      <a href="/inventory#v<%= vid %>" class="btn btn-outline-secondary">Cancel</a>
+                                    </div>
+                                    <span class="inv-adjust-note">Was <%= qty %></span>
+                                  </form>
+                                </td>
+                              <% } else { %>
+                                <td class="count"><%= qty %></td>
+                              <% } %>
+                              <td class="menu-cell">
+                                <%- include('../template/rowmenu', { menuLabel: 'Actions for ' + group.name + ', ' + row.Size + ' / ' + row.Color, menuItems: row.Variant_ID == null ? [] : [
+                                  authenticated && !isAdjusting && { label: 'Adjust stock', href: '/inventory?adjust=' + vid + '#v' + vid, icon: 'adjust' },
+                                  authenticated && { label: 'Edit variant', href: '/variants/' + vid + '/edit', icon: 'edit' }
+                                ] }) %>
+                              </td>
+                            </tr>
+                          <% }); %>
                         <% }); %>
                       </tbody>
                     </table>

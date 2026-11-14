@@ -14,9 +14,14 @@
     days: Number(salesInput.days) > 0 ? Number(salesInput.days) : 30
   };
 
-  const ordersAvailable = Array.isArray(dashboardData.recent_orders);
+  // Recent orders: one type at a time (Sales by default) so stock corrections don't hide real orders.
+  const recentKind = (typeof recentType !== 'undefined' && recentType) ? recentType : 'Sale';
+  const recentByType = dashboardData.recent_by_type && typeof dashboardData.recent_by_type === 'object' ? dashboardData.recent_by_type : null;
+  const recentSource = recentByType ? recentByType[recentKind] : dashboardData.recent_orders;
+  const ordersAvailable = Array.isArray(recentSource);
   const recentOrders = ordersAvailable
-    ? dashboardData.recent_orders.filter(o => o && typeof o === 'object') : [];
+    ? recentSource.filter(o => o && typeof o === 'object') : [];
+  const recentTabs = [['Sale', 'Sales'], ['Restock', 'Restocks'], ['Adjustment', 'Adjustments']];
 
   const stockAvailable = Array.isArray(dashboardData.low_stock);
   const lowStock = stockAvailable
@@ -30,9 +35,8 @@
   const segments = Array.isArray(donutSource.segments) ? donutSource.segments : [];
   const hasDonut = segments.length > 0;
 
-  const trendSource = (typeof trend !== 'undefined' && trend && typeof trend === 'object')
-    ? trend : (dashboardData.trend || dashboardData.inventory_trend || {});
-  const hasTrend = Boolean(trendSource.first && trendSource.last);
+  // Stock in vs. out: units sold and restocked per week (built by frontend/lib/charts.js buildFlow).
+  const flowChart = (typeof flow !== 'undefined' && flow && typeof flow === 'object') ? flow : null;
 
   // server.js does not currently supply fmt; use safe built-in formatters.
   const providedFmt = (typeof fmt !== 'undefined' && fmt && typeof fmt === 'object')
@@ -110,7 +114,7 @@
               <div class="sales-summary">
                 <p class="sales-total"><%= sales.revenue === null ? 'Revenue unavailable' : displayFmt.money(sales.revenue) %></p>
                 <p class="sales-note">
-                  <%= sales.units === null ? 'Units unavailable' : displayFmt.number(sales.units) + ' units sold' %> in the last
+                  <%= sales.units === null ? 'Units unavailable' : displayFmt.number(sales.units) + (sales.units === 1 ? ' unit sold' : ' units sold') %> in the last
                   <%= sales.days %> days
                 </p>
                 <% if (hasDonut) { %>
@@ -131,12 +135,19 @@
 
         <!-- RECENT ORDERS -->
         <article class="dash-card">
-          <h2>Recent Orders</h2>
+          <div class="dash-head">
+            <h2>Recent orders</h2>
+            <nav class="card-tabs" aria-label="Show recent orders by type">
+              <% recentTabs.forEach(function(tab) { %>
+                <a href="/?recent=<%= tab[0] %>" class="<%= recentKind === tab[0] ? 'active' : '' %>"<% if (recentKind === tab[0]) { %> aria-current="page"<% } %>><%= tab[1] %></a>
+              <% }); %>
+            </nav>
+          </div>
           <div class="dash-body">
             <% if (!ordersAvailable) { %>
               <p class="empty">Recent order data is not connected yet.</p>
             <% } else if (recentOrders.length === 0) { %>
-              <p class="empty">No orders recorded yet.</p>
+              <p class="empty">No <%= recentKind === 'Sale' ? 'sales' : recentKind === 'Restock' ? 'restocks' : 'adjustments' %> recorded yet.</p>
             <% } else { %>
               <ul class="rows">
                 <% recentOrders.forEach(function(o) { %>
@@ -145,29 +156,22 @@
                     <div class="row-main">
                       <span class="row-title"><%= o.product || 'Unknown Product' %></span>
                       <span class="row-sub">
-                        <%= o.size || 'N/A' %> / <%= o.color || 'N/A' %>,
-                        <%= displayFmt.date(o.date) %>,
+                        <%= o.size || 'N/A' %> / <%= o.color || 'N/A' %> ·
+                        <%= displayFmt.date(o.date) %> ·
                         <%= o.employee || 'Unknown' %>
                       </span>
                     </div>
-                    <div class="row-side">
-                      <span class="tag <%= displayFmt.tagClass(o.transaction_type) %>">
-                        <%= o.transaction_type || 'Unknown' %>
-                      </span>
-                      <span class="qty <%= orderQty < 0 ? 'neg' : 'pos' %>">
-                        <%= displayFmt.signed(orderQty) %>
-                      </span>
-                    </div>
+                    <span class="qty <%= orderQty < 0 ? 'neg' : 'pos' %>"><%= displayFmt.signed(orderQty) %></span>
                   </li>
                 <% }); %>
               </ul>
             <% } %>
           </div>
+          <a class="dash-link" href="/orders<%= recentKind ? '?type=' + recentKind : '' %>">View all <%= recentKind === 'Sale' ? 'sales' : recentKind === 'Restock' ? 'restocks' : 'adjustments' %> →</a>
         </article>
-
         <!-- LOW STOCK -->
         <article class="dash-card">
-          <h2>Low Stock</h2>
+          <h2>Low stock</h2>
           <div class="dash-body">
             <% if (!stockAvailable) { %>
               <p class="empty">Inventory data is not connected yet.</p>
@@ -198,42 +202,45 @@
               </ul>
             <% } %>
           </div>
+          <a class="dash-link" href="/inventory">View in Inventory →</a>
         </article>
 
-        <!-- INVENTORY TREND -->
+        <!-- STOCK IN VS. OUT -->
         <article class="dash-card">
-          <h2>Inventory Trend Graph</h2>
+          <div class="dash-head">
+            <h2>Stock in vs. out</h2>
+            <span class="muted" style="font-size:.85rem">Units per week · last 4 weeks</span>
+          </div>
           <div class="dash-body">
-            <% if (hasTrend) { %>
-              <div class="trend-wrap">
-                <p class="trend-total">
-                  <strong><%= displayFmt.number(trendSource.last.total_units) %></strong>
-                  units in stock on <%= displayFmt.date(trendSource.last.date) %>
+            <% if (flowChart) { %>
+              <% const net = flowChart.totals.restocked - flowChart.totals.sold; %>
+              <div class="flow">
+                <p class="flow-summary">
+                  Sold <strong><%= displayFmt.number(flowChart.totals.sold) %></strong>,
+                  restocked <strong><%= displayFmt.number(flowChart.totals.restocked) %></strong>:
+                  <% if (net === 0) { %>stock is <strong>unchanged</strong>.<% } else { %>stock is <strong class="<%= net < 0 ? 'neg' : 'pos' %>"><%= net < 0 ? 'down' : 'up' %> <%= displayFmt.number(Math.abs(net)) %> <%= Math.abs(net) === 1 ? 'unit' : 'units' %></strong>.<% } %>
                 </p>
-                <svg class="trend" viewBox="0 0 320 140" role="img"
-                     aria-label="Total units in stock from <%= displayFmt.date(trendSource.first.date) %> to <%= displayFmt.date(trendSource.last.date) %>">
-                  <defs>
-                    <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0" style="stop-color:#0000aa;stop-opacity:.22" />
-                      <stop offset="1" style="stop-color:#0000aa;stop-opacity:0" />
-                    </linearGradient>
-                  </defs>
-                  <line class="grid-line" x1="0" y1="20" x2="320" y2="20" />
-                  <line class="grid-line" x1="0" y1="55" x2="320" y2="55" />
-                  <line class="grid-line" x1="0" y1="90" x2="320" y2="90" />
-                  <line class="grid-line" x1="0" y1="125" x2="320" y2="125" />
-                  <path class="trend-area" d="<%= trendSource.area || '' %>" />
-                  <path class="trend-line" d="<%= trendSource.line || '' %>" />
+                <div class="flow-legend">
+                  <span><i style="background:<%= flowChart.colors.sold %>"></i>Sold</span>
+                  <span><i style="background:<%= flowChart.colors.restocked %>"></i>Restocked</span>
+                </div>
+                <svg class="flow-chart" viewBox="0 0 <%= flowChart.width %> <%= flowChart.height %>" role="img"
+                     aria-label="Units sold and restocked per week for the last 4 weeks. Sold <%= flowChart.totals.sold %>, restocked <%= flowChart.totals.restocked %>.">
+                  <% flowChart.gridlines.forEach(function(g) { %>
+                    <line x1="<%= flowChart.left %>" y1="<%= g.y %>" x2="<%= flowChart.width %>" y2="<%= g.y %>" stroke="<%= g.value === 0 ? '#c9cdfb' : '#eef0f6' %>" stroke-width="1" />
+                    <text x="<%= flowChart.left - 8 %>" y="<%= Number(g.y) + 4 %>" text-anchor="end" font-size="11" fill="#5d6388"><%= Number.isInteger(g.value) ? g.value : g.value.toFixed(1) %></text>
+                  <% }); %>
+                  <% flowChart.bars.forEach(function(bar) { %>
+                    <path class="bar" d="<%= bar.d %>" fill="<%= bar.color %>"><title>Week of <%= bar.week %>: <%= bar.value %> <%= bar.kind === 'sold' ? 'sold' : 'restocked' %></title></path>
+                  <% }); %>
+                  <% flowChart.labels.forEach(function(l) { %>
+                    <text x="<%= l.x %>" y="<%= l.y %>" text-anchor="middle" font-size="12" fill="#5d6388">Week of <%= l.text %></text>
+                  <% }); %>
                 </svg>
-                <p class="trend-caption">
-                  <span><%= displayFmt.date(trendSource.first.date) %></span>
-                  <span><%= displayFmt.date(trendSource.last.date) %></span>
-                </p>
+                <p class="flow-note">Hover a bar for its exact number. Adjustments aren’t counted: they’re corrections, not stock coming in or going out.</p>
               </div>
             <% } else { %>
-              <p class="empty">
-                Inventory history is unavailable. Confirm that invoice transactions and inventory records are available from Flask.
-              </p>
+              <p class="empty">Sales and restock history is unavailable. Check that the Flask API is running.</p>
             <% } %>
           </div>
         </article>

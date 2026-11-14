@@ -1,74 +1,101 @@
+<%
+  // Manage catalog: one box per list. Every box works the same way: names with a ⋯ menu, Add form at the bottom.
+  // Product variants aren't listed here: they're managed on Inventory (⋯ → Edit variant / Add variants).
+  const list = x => Array.isArray(x) ? x : [];
+  const counts = typeof variantCounts !== 'undefined' && variantCounts ? variantCounts : {};
+  const renameKey = typeof renaming !== 'undefined' ? renaming : null;
+  const categoryName = id => { const c = list(categories).find(x => String(x.Category_ID) === String(id)); return c ? c.Category : 'No category'; };
+  const boxes = [
+    { label: 'Products', path: 'products', key: 'Product_ID', text: 'Name', items: list(products),
+      sub: p => categoryName(p.Category_ID) + ' · ' + (counts[p.Product_ID] || 0) + ' ' + ((counts[p.Product_ID] || 0) === 1 ? 'variant' : 'variants'),
+      menu: p => [
+        { label: 'Edit product', href: '/products/' + p.Product_ID + '/edit', icon: 'edit' },
+        { label: 'Add variants', href: '/products/' + p.Product_ID + '/variants/new', icon: 'add' },
+        { label: 'View in Inventory', href: '/inventory#p' + p.Product_ID, icon: 'box' }
+      ] },
+    { label: 'Suppliers', path: 'suppliers', key: 'Supplier_ID', text: 'Name', items: list(suppliers),
+      sub: s => s.Email || s.Phone || '',
+      add: [{ name: 'Name', label: 'Name', required: true }, { name: 'Email', label: 'Email', type: 'email' }, { name: 'Phone', label: 'Phone (optional)', type: 'tel' }],
+      menu: s => [
+        { label: 'Edit supplier', href: '/suppliers/' + s.Supplier_ID + '/edit', icon: 'edit' },
+        { label: 'Delete supplier', action: '/suppliers/' + s.Supplier_ID + '/delete', icon: 'delete', danger: true, confirm: 'Delete the supplier ' + s.Name + '? This can’t be undone.', confirmButton: 'Delete supplier' }
+      ] },
+    { label: 'Categories', path: 'categories', key: 'Category_ID', text: 'Category', items: list(categories),
+      add: [{ name: 'Category', label: 'Category name', required: true }],
+      menu: c => [
+        { label: 'Edit category', href: '/categories/' + c.Category_ID + '/edit', icon: 'edit' },
+        { label: 'Delete category', action: '/categories/' + c.Category_ID + '/delete', icon: 'delete', danger: true, confirm: 'Delete the category ' + c.Category + '? This can’t be undone.', confirmButton: 'Delete category' }
+      ] },
+    { label: 'Locations', path: 'locations', key: 'Location_ID', text: 'Location_Name', items: list(locations),
+      add: [{ name: 'Location_Name', label: 'Location name', required: true }],
+      menu: l => [
+        { label: 'Edit location', href: '/locations/' + l.Location_ID + '/edit', icon: 'edit' },
+        { label: 'Delete location', action: '/locations/' + l.Location_ID + '/delete', icon: 'delete', danger: true, confirm: 'Delete the location ' + l.Location_Name + '? This can’t be undone.', confirmButton: 'Delete location' }
+      ] },
+    { label: 'Colors', path: 'colors', key: 'Color_ID', text: 'Color', items: list(colors), rename: true,
+      add: [{ name: 'Color', label: 'Color name', required: true }],
+      menu: c => [{ label: 'Rename', href: '/manage?rename=colors-' + c.Color_ID + '#colors', icon: 'edit' }] },
+    { label: 'Sizes', path: 'sizes', key: 'Size_ID', text: 'Size', items: list(sizes), rename: true,
+      add: [{ name: 'Size', label: 'Size name', required: true }],
+      menu: s => [{ label: 'Rename', href: '/manage?rename=sizes-' + s.Size_ID + '#sizes', icon: 'edit' }] }
+  ];
+%>
 <!doctype html>
 <html lang="en">
-<head><%- include('../template/head', { title: 'Manage Catalogue' }) %></head>
+<head>
+  <%- include('../template/head', { title: 'Manage catalog' }) %>
+</head>
 <body>
 <div class="app">
   <%- include('../template/nav', { active: 'manage' }) %>
   <main class="content">
     <%- include('../template/topbar') %>
     <%- include('../template/messages') %>
-    <header class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-      <h1>Manage Catalogue</h1>
-      <a href="/new/product" class="scc-btn" style="margin-top:0;">+ Add Product</a>
+    <header class="page-header">
+      <h1>Manage catalog</h1>
+      <p class="page-sub">The lists behind your products. Sizes, colors and stock for each product are on <a href="/inventory">Inventory</a>.</p>
     </header>
-    <p class="empty" style="margin-bottom:1rem">Choose a record to open its edit screen, or use the forms to add a new supplier, category, location, color or size.</p>
-    <% const groups = [
-      { label:'Products', items:products, key:'Product_ID', text:'Name', path:'products' },
-      { label:'Product variants', items:variants, key:'Variant_ID', text:'Variant_ID', path:'variants' },
-      { label:'Suppliers', items:suppliers, key:'Supplier_ID', text:'Name', path:'suppliers', single:'supplier',
-        add:[{ name:'Name', label:'Name', required:true }, { name:'Email', label:'Email', type:'email' }, { name:'Phone', label:'Phone', type:'tel' }] },
-      { label:'Categories', items:categories, key:'Category_ID', text:'Category', path:'categories', single:'category',
-        add:[{ name:'Category', label:'Category name', required:true }] },
-      { label:'Locations', items:locations, key:'Location_ID', text:'Location_Name', path:'locations', single:'location',
-        add:[{ name:'Location_Name', label:'Location name', required:true }] },
-      { label:'Colors', items:colors, key:'Color_ID', text:'Color', path:'colors', single:'color', rename:true,
-        add:[{ name:'Color', label:'Color name', required:true }] },
-      { label:'Sizes', items:sizes, key:'Size_ID', text:'Size', path:'sizes', single:'size', rename:true,
-        add:[{ name:'Size', label:'Size name', required:true }] }
-    ]; %>
-    <div class="dashboard-grid" aria-label="Catalog records">
-      <% groups.forEach(group => { %>
-      <section class="panel">
-        <div class="panel-bar"><strong><%= group.label %></strong> (<%= group.items.length %>)</div>
-        <div class="table-scroll">
-          <table class="data-table">
-            <thead><tr><th scope="col">Record</th><th scope="col">Action</th></tr></thead>
-            <tbody>
-              <% if (!group.items.length) { %>
-                <tr><td colspan="2" class="empty-cell">No records available</td></tr>
+
+    <div class="catalog-grid" aria-label="Catalog lists">
+      <% boxes.forEach(function(box) { %>
+      <section class="catalog-box" id="<%= box.path %>" aria-labelledby="box-<%= box.path %>">
+        <div class="catalog-box-bar"><h2 id="box-<%= box.path %>"><%= box.label %></h2><span class="muted"><%= box.items.length %></span></div>
+        <ul class="catalog-list">
+          <% if (!box.items.length) { %><li class="empty-item">None yet</li><% } %>
+          <% box.items.forEach(function(item) { %>
+            <% const id = String(item[box.key]); const name = item[box.text] || ('#' + id); const sub = box.sub ? box.sub(item) : ''; %>
+            <li id="<%= box.path %>-<%= id %>">
+              <% if (box.rename && renameKey === box.path + '-' + id) { %>
+                <form action="/manage/rename/<%= box.path %>/<%= id %>" method="POST" class="rename">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <label class="visually-hidden" for="rename-<%= box.path %>-<%= id %>">New name for <%= name %></label>
+                  <input class="form-control form-control-sm" id="rename-<%= box.path %>-<%= id %>" name="Name" value="<%= name %>" maxlength="50" required autofocus>
+                  <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                  <a href="/manage#<%= box.path %>" class="btn btn-outline-secondary btn-sm">Cancel</a>
+                </form>
+              <% } else { %>
+                <span class="name"><%= name %><% if (sub) { %><span class="sub"><%= sub %></span><% } %></span>
+                <%- include('../template/rowmenu', { menuLabel: 'Actions for ' + name, menuItems: box.menu(item) }) %>
               <% } %>
-              <% group.items.forEach(item => { %>
-                <tr>
-                  <% if (group.rename) { %>
-                    <td colspan="2">
-                      <form action="/manage/rename/<%= group.path %>/<%= item[group.key] %>" method="POST" style="display:flex;gap:.5rem;align-items:center;"
-                            data-confirm="Rename <%= item[group.text] %>?" data-confirm-button="Save">
-                        <label class="visually-hidden" for="rename-<%= group.path %>-<%= item[group.key] %>">Rename <%= item[group.text] %></label>
-                        <input class="form-control" id="rename-<%= group.path %>-<%= item[group.key] %>" name="Name" value="<%= item[group.text] %>" maxlength="50" required>
-                        <button type="submit" class="btn btn-outline-secondary">Save</button>
-                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      </form>
-                    </td>
-                  <% } else { %>
-                    <td><%= item[group.text] || '#' + item[group.key] %></td>
-                    <td><a href="/<%= group.path %>/<%= item[group.key] %>/edit">Edit</a></td>
-                  <% } %>
-                </tr>
-              <% }); %>
-            </tbody>
-          </table>
+            </li>
+          <% }); %>
+        </ul>
+        <div class="catalog-add">
+          <% if (box.path === 'products') { %>
+            <a href="/new/product" class="scc-btn" style="margin:0;align-self:flex-start;padding:.5rem 1rem">+ Add product</a>
+            <span class="hint" style="margin:0">Opens the product form (name, category, supplier).</span>
+          <% } else { %>
+            <form action="/manage/add/<%= box.path %>" method="POST">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <% box.add.forEach(function(f) { %>
+                <label class="visually-hidden" for="add-<%= box.path %>-<%= f.name %>"><%= f.label %></label>
+                <input class="form-control" id="add-<%= box.path %>-<%= f.name %>" name="<%= f.name %>" placeholder="<%= f.label %>"
+                       type="<%= f.type || 'text' %>" maxlength="100" <%= f.required ? 'required' : '' %>>
+              <% }) %>
+              <button type="submit" class="btn btn-primary">Add</button>
+            </form>
+          <% } %>
         </div>
-        <% if (group.add) { %>
-        <form action="/manage/add/<%= group.path %>" method="POST" style="padding:1rem;">
-          <% group.add.forEach(f => { %>
-            <label class="form-label" for="add-<%= group.path %>-<%= f.name %>"><%= f.label %></label>
-            <input class="form-control mb-2" id="add-<%= group.path %>-<%= f.name %>" name="<%= f.name %>"
-                   type="<%= f.type || 'text' %>" maxlength="100" <%= f.required ? 'required' : '' %>>
-          <% }) %>
-          <button type="submit" class="btn btn-primary">Add <%= group.single %></button>
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        </form>
-        <% } %>
       </section>
       <% }); %>
     </div>

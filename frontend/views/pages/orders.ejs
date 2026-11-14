@@ -12,9 +12,7 @@
                 <%- include('../template/topbar'); %>
                 <%- include('../template/messages'); %>
 
-                <header class="page-header"
-                        style="display:flex;justify-content:space-between;
-                              align-items:center;gap:1rem;flex-wrap:wrap;">
+                <header class="page-header page-header-row">
                   <h1>Orders</h1>
                   <a href="/new/transaction" class="scc-btn">
                     + Record Transaction
@@ -37,15 +35,15 @@
                       <caption class="visually-hidden">Order and transaction records</caption>
                       <thead>
                         <tr>
-                          <th scope="col">Invoice</th>
+                          <th scope="col">Order #</th>
                           <th scope="col">Date</th>
                           <th scope="col">Type</th>
                           <th scope="col">Product</th>
                           <th scope="col">Size</th>
                           <th scope="col">Color</th>
-                          <th scope="col" class="num">Quantity change</th>
+                          <th scope="col" class="num">Qty change</th>
                           <th scope="col">Employee</th>
-                          <th scope="col">Actions</th>
+                          <th scope="col" class="menu-cell"><span class="visually-hidden">Actions</span></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -56,48 +54,22 @@
                         <% } %>
                         <% rows.forEach(r => { %>
                           <tr>
-                            <td><%= r.invoice_id == null ? 'N/A' : '#' + r.invoice_id %></td>
+                            <td><strong><%= r.invoice_id == null ? 'N/A' : '#' + r.invoice_id %></strong></td>
                             <td><%= fmt.date(r.date) %></td>
-                            <td><span class="tag <%= fmt.tagClass(r.transaction_type) %>"><%= r.transaction_type %></span></td>
+                            <td><span class="tag tag-<%= String(r.transaction_type).toLowerCase() %>"><%= r.transaction_type %></span></td>
                             <td><strong><%= r.product %></strong></td>
                             <td><%= r.size %></td>
                             <td><%= r.color %></td>
                             <td class="num"><span class="qty <%= r.quantity_change < 0 ? 'neg' : 'pos' %>"><%= fmt.signed(r.quantity_change) %></span></td>
                             <td><%= r.employee || 'N/A' %></td>
-                            <td>
-                              <% if (r.invoice_id && authenticated) { %>
-
-                                <!-- EDIT BUTTON -->
-                                <a href="/orders/<%= r.invoice_id %>/edit"
-                                  class="btn btn-outline-primary">
-                                  Edit
-                                </a>
-
-                                <!-- DELETE BUTTON: MANAGERS ONLY -->
-                                <% if (Role === 'Manager') { %>
-
-                                  <form action="/orders/<%= r.invoice_id %>/delete"
-                                        method="POST"
-                                        class="inline-form"
-                                        data-confirm="Delete order #<%= r.invoice_id %>? This will reverse its inventory change."
-                                        data-confirm-button="Delete"
-                                        data-confirm-style="danger">
-
-                                    <input type="hidden"
-                                          name="_csrf"
-                                          value="<%= csrfToken %>">
-
-                                    <button type="submit" class="btn btn-outline-danger">
-                                      Delete
-                                    </button>
-
-                                  </form>
-
-                                <% } %>
-
-                              <% } %>
+                            <td class="menu-cell">
+                              <%- include('../template/rowmenu', { menuLabel: 'Actions for order #' + r.invoice_id, menuItems: (r.invoice_id && authenticated) ? [
+                                { label: 'Edit order', href: '/orders/' + r.invoice_id + '/edit', icon: 'edit' },
+                                Role === 'Manager' && { label: 'Delete order', action: '/orders/' + r.invoice_id + '/delete', icon: 'delete', danger: true,
+                                  confirm: 'Delete order #' + r.invoice_id + ' (' + r.transaction_type + ', ' + r.product + ' ' + r.size + ' / ' + r.color + ')? This reverses its stock change.',
+                                  confirmButton: 'Delete order' }
+                              ] : [] }) %>
                             </td>
-
                           </tr>
                         <% }) %>
                       </tbody>
