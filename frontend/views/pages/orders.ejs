@@ -54,9 +54,11 @@
                         <% } else if (!rows.length) { %>
                           <tr><td colspan="9" class="empty-cell">No matching orders found.</td></tr>
                         <% } %>
+                        <% const newOrderIds = new Set((typeof newOrders !== 'undefined' && Array.isArray(newOrders) ? newOrders : []).map(String)); %>
                         <% rows.forEach(r => { %>
-                          <tr>
-                            <td><strong><%= r.invoice_id == null ? 'N/A' : '#' + r.invoice_id %></strong></td>
+                          <% const orderIsNew = newOrderIds.has(String(r.invoice_id)); %>
+                          <tr id="o<%= r.invoice_id %>" class="<%= orderIsNew ? 'just-added' : '' %>">
+                            <td><strong><%= r.invoice_id == null ? 'N/A' : '#' + r.invoice_id %></strong><% if (orderIsNew) { %> <span class="tag tag-new">New</span><% } %></td>
                             <td><%= fmt.date(r.date) %></td>
                             <td><span class="tag tag-<%= String(r.transaction_type).toLowerCase() %>"><%= r.transaction_type %></span><% if (r.transaction_type === 'Restock' && r.supplier) { %><span class="from-supplier">from <%= r.supplier %></span><% } %></td>
                             <td><strong><%= r.product %></strong></td>

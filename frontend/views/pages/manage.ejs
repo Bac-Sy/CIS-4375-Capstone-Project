@@ -4,6 +4,11 @@
   const list = x => Array.isArray(x) ? x : [];
   const counts = typeof variantCounts !== 'undefined' && variantCounts ? variantCounts : {};
   const renameKey = typeof renaming !== 'undefined' ? renaming : null;
+  // entries you added in the last 15 minutes (by name, or products by ID) are highlighted and tagged New
+  const recentList = typeof recent !== 'undefined' && recent ? recent : {};
+  const isNew = (path, item, id, name) => path === 'products'
+    ? (recentList.products || []).includes(String(id))
+    : (recentList['catalog-' + path] || []).includes(String(name).toLowerCase());
   const categoryName = id => { const c = list(categories).find(x => String(x.Category_ID) === String(id)); return c ? c.Category : 'No category'; };
   const boxes = [
     { label: 'Products', path: 'products', key: 'Product_ID', text: 'Name', items: list(products),
@@ -64,7 +69,8 @@
           <% if (!box.items.length) { %><li class="empty-item">None yet</li><% } %>
           <% box.items.forEach(function(item) { %>
             <% const id = String(item[box.key]); const name = item[box.text] || ('#' + id); const sub = box.sub ? box.sub(item) : ''; %>
-            <li id="<%= box.path %>-<%= id %>">
+            <% const entryIsNew = isNew(box.path, item, id, name); %>
+            <li id="<%= box.path %>-<%= id %>" class="<%= entryIsNew ? 'just-added' : '' %>">
               <% if (box.rename && renameKey === box.path + '-' + id) { %>
                 <form action="/manage/rename/<%= box.path %>/<%= id %>" method="POST" class="rename">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -74,7 +80,7 @@
                   <a href="/manage#<%= box.path %>" class="btn btn-outline-secondary btn-sm">Cancel</a>
                 </form>
               <% } else { %>
-                <span class="name"><%= name %><% if (sub) { %><span class="sub"><%= sub %></span><% } %></span>
+                <span class="name"><%= name %><% if (entryIsNew) { %> <span class="tag tag-new">New</span><% } %><% if (sub) { %><span class="sub"><%= sub %></span><% } %></span>
                 <%- include('../template/rowmenu', { menuLabel: 'Actions for ' + name, menuItems: box.menu(item) }) %>
               <% } %>
             </li>

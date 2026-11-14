@@ -232,6 +232,23 @@ function flashAndRedirect(req, res, message, destination = '/') {
   req.session.flash = String(message || 'Action completed.');
   return res.redirect(303, destination);
 }
+// "Just added" highlights: what you added or changed in the last 15 minutes is highlighted and tagged
+// on Inventory and Orders (so it stands out in a demo full of test data). Kept in your own session only.
+const RECENT_MINUTES = 15;
+function markRecent(req, kind, id) {
+  if (id === null || id === undefined || id === '') return;
+  const recent = req.session.recent || (req.session.recent = {});
+  (recent[kind] || (recent[kind] = {}))[String(id)] = Date.now();
+}
+function recentIds(req) {
+  const cutoff = Date.now() - RECENT_MINUTES * 60 * 1000;
+  const out = {};
+  for (const [kind, ids] of Object.entries(req.session.recent || {})) {
+    out[kind] = Object.keys(ids).filter(id => ids[id] >= cutoff);
+    for (const id of Object.keys(ids)) if (ids[id] < cutoff) delete ids[id];
+  }
+  return out;
+}
 function accessDenied(req, res, status, reason) {
   return page(req, res, 'accessdenial', {
     title: 'Access denied', detail: reason, message: reason
@@ -490,7 +507,11 @@ app.get('/inventory', pageAccess, async (req, res) => {
       : allGroups;
     // ?adjust=<Variant_ID> opens that row in Adjust stock mode (chosen from its ⋯ menu).
     const adjusting = /^[1-9]\d*$/.test(String(req.query.adjust || '')) ? String(req.query.adjust) : null;
-    return page(req, res, 'inventory', { ...result, groups, allGroups, lowOnly, lowCount, adjusting, dataAvailable: true });
+    const recent = recentIds(req);
+    return page(req, res, 'inventory', {
+      ...result, groups, allGroups, lowOnly, lowCount, adjusting, dataAvailable: true,
+      newProducts: recent.products || [], newVariants: recent.variants || [], updatedVariants: recent.adjusted || []
+    });
   } catch (err) {
     console.error('Inventory load failed:', err.message);
     return page(req, res, 'inventory', {
@@ -512,6 +533,7 @@ app.post('/inventory/:variantId/adjust', signedIn, async (req, res) => {
       New_Quantity: Number(quantity),
       Employee_ID: req.session.user.id
     });
+    markRecent(req, 'adjusted', req.params.variantId);
     return flashAndRedirect(req, res, result?.message || 'Inventory adjusted.', back);
   } catch (err) {
     return flashAndRedirect(req, res, apiError(err, 'Unable to adjust inventory.'), back);
@@ -542,7 +564,8 @@ app.get('/orders', pageAccess, async (req, res) => {
     const rows = arrayData(Array.isArray(reply) ? reply : reply?.rows).map(normalizeOrder);
     return page(req, res, 'orders', {
       ...fallback, rows, types: arrayData(reply?.types),
-      limit: Number(reply?.limit) || 100, hasMore: Boolean(reply?.has_more), dataAvailable: true
+      limit: Number(reply?.limit) || 100, hasMore: Boolean(reply?.has_more), dataAvailable: true,
+      newOrders: recentIds(req).orders || []
     });
   } catch (err) {
     return page(req, res, 'orders', {
@@ -912,10 +935,13 @@ app.post('/record/transaction', signedIn, async (req, res) => {
       Employee_ID: req.session.user.id
     });
 
+    const newOrder = Number(result?.Invoice_ID);
+    if (Number.isSafeInteger(newOrder) && newOrder > 0) markRecent(req, 'orders', newOrder);
+    markRecent(req, 'adjusted', variantId);
     return flashAndRedirect(
       req, res,
       result?.message || 'Transaction recorded.',
-      '/orders'
+      Number.isSafeInteger(newOrder) && newOrder > 0 ? `/orders#o${newOrder}` : '/orders'
     );
   } catch (err) {
     return flashAndRedirect(
@@ -1422,6 +1448,7 @@ app.get('/manage', managerOnly, async (req, res) => {
       products: arrayData(products),
       variantCounts,
       renaming,
+      recent: recentIds(req),
       colors: arrayData(colors),
       sizes: arrayData(sizes)
     });
@@ -1489,11 +1516,12 @@ app.post('/manage/add/:kind', managerOnly, async (req, res) => {
 
   try {
     const result = await apiPost(config.endpoint, payload);
+    markRecent(req, `catalog-${req.params.kind}`, payload[config.required].toLowerCase());
 
     return flashAndRedirect(
       req, res,
       result?.message || 'Catalog record added.',
-      '/manage'
+      `/manage#${req.params.kind}`
     );
   } catch (err) {
     return flashAndRedirect(
@@ -1677,6 +1705,7 @@ app.post('/products/:id/variants', managerOnly, async (req, res) => {
         await apiPut('/adjust/inventory', { Variant_ID: variantId, New_Quantity: item.stock });
       }
       added.push(item.label);
+      markRecent(req, 'variants', variantId);
     } catch (err) {
       const done = added.length ? `Added ${added.join(', ')}. ` : '';
       const failed = variantId
@@ -1686,6 +1715,7 @@ app.post('/products/:id/variants', managerOnly, async (req, res) => {
     }
   }
 
+  markRecent(req, 'products', productId);
   return flashAndRedirect(req, res,
     `Added ${added.length} ${added.length === 1 ? 'variant' : 'variants'}: ${added.join(', ')}.`,
     `/inventory#p${productId}`);
@@ -1740,6 +1770,7 @@ if (!Number.isSafeInteger(productId) || productId <= 0) {
   );
 }
 
+markRecent(req, 'products', productId);
 return flashAndRedirect(
   req, res,
   `Product "${name}" created. Add its size/color variant next.`,

@@ -1125,3 +1125,15 @@ h1 {
 @media print { .pdfv { display: none !important; } }
 .inv-count { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
 .inv-product td.inv-summary { color: var(--muted); }
+
+/* Just added / changed (15 minutes): stands out in a demo full of test data */
+.tag-new { background: var(--red); color: var(--white); }
+.data-table tr.just-added td { background: #fff4cc; }
+.data-table tr.just-added td:first-child { box-shadow: inset 5px 0 0 var(--red); }
+.data-table tr.just-added:hover td { background: #ffecb0; }
+/* the row the page jumped to (#p.., #v.., #o..) pulses so everyone's eyes go to it */
+@keyframes scc-spotlight { 0%, 100% { background: #fff4cc; } 30%, 70% { background: #ffd966; } }
+.data-table tr:target td { animation: scc-spotlight 1.4s ease-in-out 3; }
+.data-table tr:target { scroll-margin-top: 120px; }
+@media (prefers-reduced-motion: reduce) { .data-table tr:target td { animation: none; background: #ffd966; } }
+.catalog-list li.just-added { background: #fff4cc; box-shadow: inset 5px 0 0 var(--red); }

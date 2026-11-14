@@ -497,9 +497,10 @@ def createInvoice():
         # date.today() uses this computer's date. CURDATE() used the database's UTC clock, so evening sales were saved as tomorrow.
         cursor.execute("insert into Invoice (Transaction_Type_ID, Quantity_Change, Date, Variant_ID, Employee_ID) values (%s, %s, %s, %s, %s)",
                        (transactionTypeID, quantityChange, date.today(), variantID, employeeID))
+        newInvoiceID = cursor.lastrowid
         cursor.execute("update Inventory set Quantity = Quantity + %s where Variant_ID = %s", (quantityChange, variantID))
         mycon.commit()
-        return jsonify({'message' : 'Invoice created and inventory updated.'}), 201
+        return jsonify({'message' : 'Invoice created and inventory updated.', 'Invoice_ID': newInvoiceID}), 201
     except Exception:
         mycon.rollback()
         app.logger.exception('Invoice create failed')
