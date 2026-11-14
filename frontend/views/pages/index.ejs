@@ -159,7 +159,7 @@
                       <span class="row-sub">
                         <%= o.size || 'N/A' %> / <%= o.color || 'N/A' %> ·
                         <%= displayFmt.date(o.date) %> ·
-                        <%= o.employee || 'Unknown' %>
+                        <%= o.employee || 'Unknown' %><% if (o.transaction_type === 'Restock' && o.supplier) { %> · from <%= o.supplier %><% } %>
                       </span>
                     </div>
                     <span class="qty <%= orderQty < 0 ? 'neg' : 'pos' %>"><%= displayFmt.signed(orderQty) %></span>

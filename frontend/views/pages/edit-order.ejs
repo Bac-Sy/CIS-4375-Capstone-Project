@@ -30,7 +30,7 @@
       <h1>Order #<%= order.invoice_id %></h1>
       <p class="order-summary">
         <span class="<%= typeClass %>"><%= order.transaction_type %></span>
-        <span><%= order.product %> – <%= order.size %> / <%= order.color %> · <%= qtyText %> · <%= dateText %> · recorded by <%= order.employee || 'N/A' %></span>
+        <span><%= order.product %> – <%= order.size %> / <%= order.color %> · <%= qtyText %> · <%= dateText %><% if (order.transaction_type === 'Restock' && order.supplier) { %> · from <%= order.supplier %><% } %> · recorded by <%= order.employee || 'N/A' %></span>
       </p>
     </header>
 

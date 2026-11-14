@@ -56,7 +56,7 @@
                           <tr>
                             <td><strong><%= r.invoice_id == null ? 'N/A' : '#' + r.invoice_id %></strong></td>
                             <td><%= fmt.date(r.date) %></td>
-                            <td><span class="tag tag-<%= String(r.transaction_type).toLowerCase() %>"><%= r.transaction_type %></span></td>
+                            <td><span class="tag tag-<%= String(r.transaction_type).toLowerCase() %>"><%= r.transaction_type %></span><% if (r.transaction_type === 'Restock' && r.supplier) { %><span class="from-supplier">from <%= r.supplier %></span><% } %></td>
                             <td><strong><%= r.product %></strong></td>
                             <td><%= r.size %></td>
                             <td><%= r.color %></td>

@@ -97,7 +97,8 @@ def register_reporting_routes(app, connect, read_query):
                p.Name AS product, s.Size AS size, co.Color AS color,
                i.Quantity_Change AS quantity_change,
                CONCAT(e.First_Name, ' ', e.Last_Name) AS employee,
-               v.Price AS price, p.Product_ID AS product_id, v.Variant_ID AS variant_id
+               v.Price AS price, p.Product_ID AS product_id, v.Variant_ID AS variant_id,
+               sup.Name AS supplier
         FROM Invoice i
         JOIN Transaction_Type t ON t.Transaction_Type_ID = i.Transaction_Type_ID
         JOIN Product_Variant v ON v.Variant_ID = i.Variant_ID
@@ -105,6 +106,7 @@ def register_reporting_routes(app, connect, read_query):
         JOIN Size s ON s.Size_ID = v.Size_ID
         JOIN Color co ON co.Color_ID = v.Color_ID
         JOIN Employee e ON e.Employee_ID = i.Employee_ID
+        LEFT JOIN Supplier sup ON sup.Supplier_ID = p.Supplier_ID
     '''
 
     @app.get('/orders')
