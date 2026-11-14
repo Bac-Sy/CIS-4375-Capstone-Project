@@ -31,7 +31,7 @@
                   class="form-select" required>
             <option value="">Select a product</option>
             <% variants.forEach(function(v) { %>
-              <option value="<%= v.variant_id %>" data-supplier="<%= v.supplier || '' %>">
+              <option value="<%= v.variant_id %>" data-supplier="<%= v.supplier || '' %>" data-available="<%= (v.available === false || v.available === 0 || v.available === '0') ? '0' : '1' %>">
                 <%= v.product %> —
                 <%= v.size %> / <%= v.color %>
                 (<%= v.quantity %> in stock)<%= (v.available === false || v.available === 0 || v.available === '0') ? ' · not available' : '' %>
@@ -79,6 +79,6 @@
 
 <%- include('../template/scripts') %>
 <%- include('../template/confirm') %>
-<script src="/js/record-transaction.js?v=1"></script>
+<script src="/js/record-transaction.js?v=2"></script>
 </body>
 </html>

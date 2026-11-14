@@ -1137,3 +1137,27 @@ h1 {
 .data-table tr:target { scroll-margin-top: 120px; }
 @media (prefers-reduced-motion: reduce) { .data-table tr:target td { animation: none; background: #ffd966; } }
 .catalog-list li.just-added { background: #fff4cc; box-shadow: inset 5px 0 0 var(--red); }
+
+/* Record transaction: "can't be sold" note for products set to Not available */
+.hint.blocked-note { color: #b0002d; font-weight: 600; }
+
+/* Sidebar fits the screen without scrolling (desktop): tighter spacing, and smaller still on short screens */
+@media (min-width: 801px) {
+  .sidebar { padding: 1rem; }
+  .logo { margin-bottom: 1.1rem; max-height: 96px; object-fit: contain; }
+  .site-nav { gap: 2px; }
+  .site-nav a { padding: 0.62rem 0.95rem; font-size: 0.98rem; }
+  .sidebar-user { margin-top: 1rem; }
+}
+@media (min-width: 801px) and (max-height: 780px) {
+  .logo { max-height: 66px; margin-bottom: 0.75rem; padding: 0.4rem; }
+  .site-nav a { padding: 0.48rem 0.9rem; font-size: 0.94rem; }
+  .site-nav a svg { width: 20px; height: 20px; }
+  .sidebar-user { padding: 0.5rem; margin-top: 0.75rem; }
+  .user-avatar { width: 36px; height: 36px; }
+  .logout { width: 36px; height: 36px; }
+}
+@media (min-width: 801px) and (max-height: 600px) {
+  .logo { max-height: 46px; }
+  .site-nav a { padding: 0.36rem 0.85rem; }
+}

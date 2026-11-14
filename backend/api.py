@@ -484,6 +484,13 @@ def createInvoice():
         if (kind == 'Sale' and quantityChange > 0) or (kind == 'Restock' and quantityChange < 0):
             mycon.rollback()
             return jsonify({'message' : 'A Sale must be negative and a Restock must be positive.'}), 400
+        #a product set to Not available can't be sold (it can still be restocked)
+        if kind == 'Sale':
+            cursor.execute("select p.Name, p.Availability from Product_Variant v join Product p on p.Product_ID = v.Product_ID where v.Variant_ID = %s", (variantID,))
+            product = cursor.fetchone()
+            if product is not None and not int(product['Availability'] or 0):
+                mycon.rollback()
+                return jsonify({'message' : '%s is set to Not available, so it can\'t be sold. Set it back to Available first.' % product['Name']}), 400
         cursor.execute("select Quantity from Inventory where Variant_ID = %s FOR UPDATE", (variantID,))
         stock = cursor.fetchone()
         if stock is None:

@@ -923,6 +923,17 @@ app.post('/record/transaction', signedIn, async (req, res) => {
       );
     }
 
+    // A product set to Not available can't be sold (it can still be restocked).
+    const item = inventory.items.find(v => Number(v.variant_id) === variantId);
+    const isAvailable = v => !(v.available === false || v.available === 0 || v.available === '0');
+    if (selected.Transaction_Type === 'Sale' && item && !isAvailable(item)) {
+      return flashAndRedirect(
+        req, res,
+        `${item.product} is set to Not available, so it can't be sold. Set it back to Available on Edit product first.`,
+        '/new/transaction'
+      );
+    }
+
     const change =
       selected.Transaction_Type === 'Sale'
         ? -quantity
