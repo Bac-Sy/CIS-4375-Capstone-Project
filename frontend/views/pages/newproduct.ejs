@@ -29,7 +29,7 @@
           <select class="form-select" id="Category_ID" name="Category_ID" required>
             <option value="" disabled selected>Select a category</option>
             <% categories.forEach(function(c) { %>
-              <option value="<%= c.Category_ID %>"><%= c.Category %></option>
+              <option value="<%= c.Category_ID %>" class="<%= isNew('categories', c.Category) ? 'opt-new' : '' %>"><%= newLabel('categories', c.Category, c.Category) %></option>
             <% }); %>
           </select>
         </div>
@@ -39,7 +39,7 @@
           <select class="form-select" id="Supplier_ID" name="Supplier_ID" required>
             <option value="" disabled selected>Select a supplier</option>
             <% suppliers.forEach(function(s) { %>
-              <option value="<%= s.Supplier_ID %>"><%= s.Name %></option>
+              <option value="<%= s.Supplier_ID %>" class="<%= isNew('suppliers', s.Name) ? 'opt-new' : '' %>"><%= newLabel('suppliers', s.Name, s.Name) %></option>
             <% }); %>
           </select>
         </div>

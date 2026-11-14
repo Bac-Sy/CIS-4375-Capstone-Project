@@ -34,14 +34,14 @@
           <fieldset class="chip-group">
             <legend>Sizes</legend>
             <% sizeList.forEach(function(s) { %>
-              <label class="chip-check"><input type="checkbox" data-pick="size" value="<%= s.Size_ID %>"><span><%= s.Size %></span></label>
+              <label class="chip-check<%= isNew('sizes', s.Size) ? ' chip-new' : '' %>"><input type="checkbox" data-pick="size" value="<%= s.Size_ID %>"><span><%= s.Size %><% if (isNew('sizes', s.Size)) { %> <em class="chip-new-tag">New</em><% } %></span></label>
             <% }); %>
             <% if (!sizeList.length) { %><p class="empty">No sizes yet. Add them on Manage catalog.</p><% } %>
           </fieldset>
           <fieldset class="chip-group">
             <legend>Colors</legend>
             <% colorList.forEach(function(c) { %>
-              <label class="chip-check"><input type="checkbox" data-pick="color" value="<%= c.Color_ID %>"><span><%= c.Color %></span></label>
+              <label class="chip-check<%= isNew('colors', c.Color) ? ' chip-new' : '' %>"><input type="checkbox" data-pick="color" value="<%= c.Color_ID %>"><span><%= c.Color %><% if (isNew('colors', c.Color)) { %> <em class="chip-new-tag">New</em><% } %></span></label>
             <% }); %>
             <% if (!colorList.length) { %><p class="empty">No colors yet. Add them on Manage catalog.</p><% } %>
           </fieldset>
@@ -58,7 +58,7 @@
             <label class="lbl" for="Location_ID">Location</label>
             <select class="form-select" id="Location_ID" name="Location_ID">
               <% locationList.forEach(function(l) { %>
-                <option value="<%= l.Location_ID %>"><%= l.Location_Name %></option>
+                <option value="<%= l.Location_ID %>" class="<%= isNew('locations', l.Location_Name) ? 'opt-new' : '' %>"><%= newLabel('locations', l.Location_Name, l.Location_Name) %></option>
               <% }); %>
             </select>
             <label class="check-label"><input type="checkbox" name="same_location" value="1" id="sameLocation" checked> Same location for all variants</label>
@@ -108,7 +108,7 @@
                         <span class="same-value" data-same="location"></span>
                         <select class="form-select" name="location_<%= key %>" data-own="location" aria-label="Location for <%= label %>">
                           <% locationList.forEach(function(l) { %>
-                            <option value="<%= l.Location_ID %>" <%= String(l.Location_ID) === firstLocation ? 'selected' : '' %>><%= l.Location_Name %></option>
+                            <option value="<%= l.Location_ID %>" class="<%= isNew('locations', l.Location_Name) ? 'opt-new' : '' %>" <%= String(l.Location_ID) === firstLocation ? 'selected' : '' %>><%= newLabel('locations', l.Location_Name, l.Location_Name) %></option>
                           <% }); %>
                         </select>
                       </td>

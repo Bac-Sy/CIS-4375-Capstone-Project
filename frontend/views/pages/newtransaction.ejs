@@ -31,10 +31,10 @@
                   class="form-select" required>
             <option value="">Select a product</option>
             <% variants.forEach(function(v) { %>
-              <option value="<%= v.variant_id %>" data-supplier="<%= v.supplier || '' %>" data-available="<%= (v.available === false || v.available === 0 || v.available === '0') ? '0' : '1' %>">
-                <%= v.product %> —
+              <option value="<%= v.variant_id %>" class="<%= isNew('variants', v.variant_id) ? 'opt-new' : '' %>" data-supplier="<%= v.supplier || '' %>" data-available="<%= (v.available === false || v.available === 0 || v.available === '0') ? '0' : '1' %>">
+                <%= isNew('variants', v.variant_id) ? '★ ' : '' %><%= v.product %> —
                 <%= v.size %> / <%= v.color %>
-                (<%= v.quantity %> in stock)<%= (v.available === false || v.available === 0 || v.available === '0') ? ' · not available' : '' %>
+                (<%= v.quantity %> in stock)<%= (v.available === false || v.available === 0 || v.available === '0') ? ' · not available' : '' %><%= isNew('variants', v.variant_id) ? ' · New' : '' %>
               </option>
             <% }); %>
           </select>

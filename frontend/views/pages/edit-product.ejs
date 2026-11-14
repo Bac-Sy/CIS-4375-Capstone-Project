@@ -28,7 +28,7 @@ value="<%= product.Name %>" maxlength="100" required>
 <label for="Category_ID" class="form-label">Category</label>
 <select class="form-select" id="Category_ID" name="Category_ID" required>
 <% categories.forEach(function(c) { %>
-<option value="<%= c.Category_ID %>" <%= c.Category_ID == product.Category_ID ? 'selected' : '' %>><%= c.Category %></option>
+<option value="<%= c.Category_ID %>" class="<%= isNew('categories', c.Category) ? 'opt-new' : '' %>" <%= c.Category_ID == product.Category_ID ? 'selected' : '' %>><%= newLabel('categories', c.Category, c.Category) %></option>
 <% }); %>
 </select>
 </div>
@@ -37,7 +37,7 @@ value="<%= product.Name %>" maxlength="100" required>
 <label for="Supplier_ID" class="form-label">Supplier</label>
 <select class="form-select" id="Supplier_ID" name="Supplier_ID" required>
 <% suppliers.forEach(function(s) { %>
-<option value="<%= s.Supplier_ID %>" <%= s.Supplier_ID == product.Supplier_ID ? 'selected' : '' %>><%= s.Name %></option>
+<option value="<%= s.Supplier_ID %>" class="<%= isNew('suppliers', s.Name) ? 'opt-new' : '' %>" <%= s.Supplier_ID == product.Supplier_ID ? 'selected' : '' %>><%= newLabel('suppliers', s.Name, s.Name) %></option>
 <% }); %>
 </select>
 </div>

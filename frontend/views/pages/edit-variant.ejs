@@ -35,7 +35,7 @@ data-confirm-button="Save changes">
 <label for="Product_ID" class="form-label">Product</label>
 <select class="form-select" id="Product_ID" name="Product_ID" required>
 <% products.forEach(function(p) { %>
-<option value="<%= p.Product_ID %>" <%= p.Product_ID == variant.Product_ID ? 'selected' : '' %>><%= p.Name %></option>
+<option value="<%= p.Product_ID %>" class="<%= isNew('products', p.Product_ID) ? 'opt-new' : '' %>" <%= p.Product_ID == variant.Product_ID ? 'selected' : '' %>><%= newLabel('products', p.Product_ID, p.Name) %></option>
 <% }); %>
 </select>
 </div>
@@ -44,7 +44,7 @@ data-confirm-button="Save changes">
 <label for="Size_ID" class="form-label">Size</label>
 <select class="form-select" id="Size_ID" name="Size_ID" required>
 <% sizes.forEach(function(s) { %>
-<option value="<%= s.Size_ID %>" <%= s.Size_ID == variant.Size_ID ? 'selected' : '' %>><%= s.Size %></option>
+<option value="<%= s.Size_ID %>" class="<%= isNew('sizes', s.Size) ? 'opt-new' : '' %>" <%= s.Size_ID == variant.Size_ID ? 'selected' : '' %>><%= newLabel('sizes', s.Size, s.Size) %></option>
 <% }); %>
 </select>
 </div>
@@ -53,7 +53,7 @@ data-confirm-button="Save changes">
 <label for="Color_ID" class="form-label">Color</label>
 <select class="form-select" id="Color_ID" name="Color_ID" required>
 <% colors.forEach(function(c) { %>
-<option value="<%= c.Color_ID %>" <%= c.Color_ID == variant.Color_ID ? 'selected' : '' %>><%= c.Color %></option>
+<option value="<%= c.Color_ID %>" class="<%= isNew('colors', c.Color) ? 'opt-new' : '' %>" <%= c.Color_ID == variant.Color_ID ? 'selected' : '' %>><%= newLabel('colors', c.Color, c.Color) %></option>
 <% }); %>
 </select>
 </div>
@@ -62,7 +62,7 @@ data-confirm-button="Save changes">
 <label for="Location_ID" class="form-label">Location</label>
 <select class="form-select" id="Location_ID" name="Location_ID" required>
 <% locations.forEach(function(l) { %>
-<option value="<%= l.Location_ID %>" <%= l.Location_ID == variant.Location_ID ? 'selected' : '' %>><%= l.Location_Name %></option>
+<option value="<%= l.Location_ID %>" class="<%= isNew('locations', l.Location_Name) ? 'opt-new' : '' %>" <%= l.Location_ID == variant.Location_ID ? 'selected' : '' %>><%= newLabel('locations', l.Location_Name, l.Location_Name) %></option>
 <% }); %>
 </select>
 </div>

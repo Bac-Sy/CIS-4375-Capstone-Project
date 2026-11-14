@@ -1161,3 +1161,8 @@ h1 {
   .logo { max-height: 46px; }
   .site-nav a { padding: 0.36rem 0.85rem; }
 }
+
+/* "New" marks in dropdowns and chips (things added in the last 15 minutes) */
+option.opt-new { background: #fff4cc; color: #a3002a; font-weight: 700; }
+.chip-check.chip-new span { box-shadow: 0 0 0 3px #ffd966; }
+.chip-new-tag { font-style: normal; font-size: 0.7rem; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--red); color: var(--white); }

@@ -129,6 +129,13 @@ app.use(async (req, res, next) => {
   res.locals.env = env;
   res.locals.fmt = fmt;
   res.locals.api = { status: 'unknown' };
+  // "New" marks in dropdowns and chips: catalog entries by name, products and variants by ID (see markRecent)
+  const recent = recentIds(req);
+  res.locals.isNew = (kind, key) => {
+    const list = recent[kind === 'products' || kind === 'variants' ? kind : `catalog-${kind}`] || [];
+    return list.includes(kind === 'products' || kind === 'variants' ? String(key) : String(key ?? '').toLowerCase());
+  };
+  res.locals.newLabel = (kind, key, label) => res.locals.isNew(kind, key) ? `★ ${label} · New` : label;
   res.locals.message = req.session.flash || null;
   res.locals.ErrorMessage = null;
   if (req.session.flash) delete req.session.flash;
