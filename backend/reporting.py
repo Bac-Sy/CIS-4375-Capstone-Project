@@ -135,9 +135,37 @@ def register_reporting_routes(app, connect, read_query):
             'SELECT Transaction_Type FROM Transaction_Type ORDER BY Transaction_Type')]
         if type_filter and type_filter not in types:
             return jsonify({'rows': [], 'types': types, 'limit': limit, 'offset': offset, 'has_more': False})
-        where = 'WHERE t.Transaction_Type = %s' if type_filter else ''
-        params = (type_filter, limit + 1, offset) if type_filter else (limit + 1, offset)
-        rows = fetch(ORDER_SELECT + where + ' ORDER BY i.Date DESC, i.Invoice_ID DESC LIMIT %s OFFSET %s', params)
+        conditions, params = [], []
+        if type_filter:
+            conditions.append('t.Transaction_Type = %s')
+            params.append(type_filter)
+        # ?q= search (Orders page only): every word must match the order #, product, size, color,
+        # type or employee. Values are passed as parameters; % and _ are escaped so they're literal.
+        search = ' '.join(str(request.args.get('q', '')).split())[:100]
+        for word in search.split(' ') if search else []:
+            like = '%' + word.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+            parts = ['p.Name LIKE %s', 's.Size LIKE %s', 'co.Color LIKE %s', 't.Transaction_Type LIKE %s',
+                     "CONCAT(e.First_Name, ' ', e.Last_Name) LIKE %s"]
+            word_params = [like] * len(parts)
+            number = word.lstrip('#')
+            if number.isdigit() and len(number) <= 9:
+                parts.append('i.Invoice_ID = %s')     # "42" or "#42" finds order #42
+                word_params.append(int(number))
+            conditions.append('(' + ' OR '.join(parts) + ')')
+            params.extend(word_params)
+        # ?from= / ?to= (YYYY-MM-DD), both days included
+        for key, sql in (('from', 'i.Date >= %s'), ('to', 'i.Date < DATE_ADD(%s, INTERVAL 1 DAY)')):
+            value = str(request.args.get(key, '')).strip()
+            if value:
+                try:
+                    date.fromisoformat(value)
+                except ValueError:
+                    return jsonify({'message': f'"{key}" must be a date like 2026-11-01.'}), 400
+                conditions.append(sql)
+                params.append(value)
+        where = (' WHERE ' + ' AND '.join(conditions)) if conditions else ''
+        params.extend([limit + 1, offset])
+        rows = fetch(ORDER_SELECT + where + ' ORDER BY i.Date DESC, i.Invoice_ID DESC LIMIT %s OFFSET %s', tuple(params))
         has_more = len(rows) > limit
         rows = rows[:limit]
         for row in rows:

@@ -178,3 +178,12 @@
   if (systemDark && systemDark.addEventListener) systemDark.addEventListener('change', function () { if (stored() === 'system') apply('system'); });
   apply(stored());
 })();
+
+// Filter dropdowns marked data-autosubmit apply as soon as you pick one (the Search button still works without JavaScript).
+(function () {
+  document.querySelectorAll('select[data-autosubmit]').forEach(function (select) {
+    select.addEventListener('change', function () {
+      if (select.form) select.form.requestSubmit ? select.form.requestSubmit() : select.form.submit();
+    });
+  });
+})();

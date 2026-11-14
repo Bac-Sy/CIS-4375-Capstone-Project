@@ -1,21 +1,23 @@
 # Redesign: before and after
 
-Screenshots of the same pages, logged in as the same manager account, with the same data from our shared database (taken November 13, 2026).
-**Before** is `dev` right after PR #17. **After** is the redesign branch, which builds the suggestions in [`docs/design-suggestions`](../design-suggestions/README.md).
+Screenshots of the same pages, logged in as the same manager account, with the same data from our shared database.
+**Before** is `dev` right after PR #17 (taken November 13, 2026). **After** is the redesign branch, which builds the suggestions in [`docs/design-suggestions`](../design-suggestions/README.md) (retaken November 14, 2026, with search, filters, Reports and dark mode).
 
 The data is mostly test records (one product, lots of +1/−1 adjustments), so the pages look emptier than they will with real products.
 
 | # | Page | What changed |
 |---|---|---|
 | 1 | [Dashboard](#1-dashboard) | Recent orders shows Sales, with Restocks / Adjustments tabs; current inventory (units in stock) above Low stock; "Stock in vs. out" replaces the flat trend graph |
-| 2 | [Inventory](#2-inventory) | Variants grouped under their product with a total; ⋯ menu; Adjust stock with − / +; "Low stock only" filter; "Not available" tag |
+| 2 | [Inventory](#2-inventory) | Variants grouped under their product with a total; ⋯ menu; Adjust stock with − / +; search box; Category, Stock (low / out / in) and Status filters; "Not available" tag |
 | 3 | [Add variants](#3-add-variants) | Pick sizes and colors, check the combinations you have, each with its own stock, location, price and cost |
 | 4 | [Edit variant](#4-edit-variant) | Named "Satin Midi Dress – M / Black" instead of "Edit variant #1" |
-| 5 | [Orders](#5-orders) | One actions column with a ⋯ menu; "Order #" |
+| 5 | [Orders](#5-orders) | One actions column with a ⋯ menu; "Order #"; search (order #, product, color, employee) and From / To dates |
 | 6 | [Edit order](#6-edit-order) | Type, item, date and quantity can be corrected; explains the stock change before saving |
 | 7 | [Employees](#7-employees) | ⋯ menu; "(you)"; + Add employee on the page instead of the sidebar |
-| 8 | [Settings](#8-settings) | Change my password, low stock threshold, log out |
-| 9 | [Manage catalog](#9-manage-catalog) | Same layout in every box; no "Product variants" box; + Add product inside its box |
+| 8 | [Settings](#8-settings) | Change my password (with show/hide), low stock threshold, Light / Dark theme, log out |
+| 9 | [Manage catalog](#9-manage-catalog) | Same layout in every box; no "Product variants" box; + Add product inside its box; colors and sizes can be deleted |
+| 10 | [Reports](#10-reports-new) | New: Sales report, Inventory report, Best sellers and Edit history, each with Preview PDF and Download Excel |
+| 11 | [Dark mode](#11-dark-mode-new) | New: moon / sun button in the sidebar, or Settings → Appearance |
 
 ---
 
@@ -33,9 +35,13 @@ Before: 4 of the 5 "Recent Orders" were adjustments, the trend graph was a flat 
 |---|---|
 | ![Inventory before](before-2-inventory.png) | ![Inventory after](after-2-inventory.png) |
 
-After, with the **Low stock only** filter (used in demo step 8):
+After, with the **Low stock** filter (used in demo step 8):
 
 ![Inventory low stock filter](after-2c-inventory-low-stock-filter.png)
+
+After, searching "black" (it only searches Inventory; a size or color search shows just those variants):
+
+![Inventory search](after-2d-inventory-search.png)
 
 After, in Adjust stock mode (⋯ → Adjust stock):
 
@@ -67,6 +73,10 @@ After, with a row's ⋯ menu open:
 
 ![Orders menu](after-5b-orders-menu.png)
 
+After, searching "sale" (it searches every order, not just the 100 on the page):
+
+![Orders search](after-5c-orders-search.png)
+
 ## 6. Edit order
 
 | Before | After |
@@ -90,3 +100,19 @@ After, with a row's ⋯ menu open:
 | Before | After |
 |---|---|
 | ![Manage catalog before](before-9-manage-catalog.png) | ![Manage catalog after](after-9-manage-catalog.png) |
+
+## 10. Reports (new)
+
+There was no Reports page before. The tabs switch reports; the strip under them filters the one you're on.
+
+| Sales report | Inventory report |
+|---|---|
+| ![Sales report](after-10-sales-report.png) | ![Inventory report](after-10b-inventory-report.png) |
+
+| Best sellers | Edit history (managers) |
+|---|---|
+| ![Best sellers](after-10c-best-sellers.png) | ![Edit history](after-10d-edit-history.png) |
+
+## 11. Dark mode (new)
+
+![Dark mode](after-11-dark-mode.png)

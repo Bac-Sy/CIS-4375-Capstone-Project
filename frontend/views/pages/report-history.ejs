@@ -1,8 +1,9 @@
 <%
   // Edit history (managers): every change made in the app, newest first.
+  const hq = typeof q !== 'undefined' && q ? q : '';
   const qs = (extra) => {
     const parts = [];
-    const all = Object.assign({ area: area, employee: employee, from: from, to: to }, extra || {});
+    const all = Object.assign({ area: area, employee: employee, from: from, to: to, q: hq }, extra || {});
     Object.keys(all).forEach(k => { if (all[k]) parts.push(k + '=' + encodeURIComponent(all[k])); });
     return parts.join('&');
   };
@@ -10,7 +11,7 @@
     const d = new Date(t);
     return Number.isNaN(d.getTime()) ? t : d.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
-  const subtitle = [area || 'All changes', from || to ? (from ? fmt.date(from) : '…') + ' – ' + (to ? fmt.date(to) : 'today') : ''].filter(Boolean).join(' · ');
+  const subtitle = [area || 'All changes', from || to ? (from ? fmt.date(from) : '…') + ' – ' + (to ? fmt.date(to) : 'today') : '', hq ? 'search “' + hq + '”' : ''].filter(Boolean).join(' · ');
   const first = (pageNumber - 1) * 100 + 1;
 %>
 <!doctype html>
@@ -28,8 +29,9 @@
     <%- include('../template/reportbar', { reportKey: 'history', reportTitle: 'Edit history', reportSubtitle: subtitle, exportHref: '/reports/history?' + qs() }) %>
 
     <!-- Filters for this report (the tabs above switch reports) -->
-    <form class="filter-bar no-print" method="GET" action="/reports/history" aria-label="Filter the history">
+    <form class="filter-bar no-print" method="GET" action="/reports/history" role="search" aria-label="Search and filter the history">
       <div class="filter-group filter-dates">
+        <%- include('../template/searchbox', { searchValue: hq, searchLabel: 'Search the edit history', searchPlaceholder: 'Search names, changes…', clearHref: '/reports/history?' + qs({ q: '' }) }) %>
         <label for="area" class="filter-label">Type</label>
         <select id="area" name="area" class="form-select form-select-sm" style="width:auto">
           <option value="">All changes</option>
@@ -45,13 +47,13 @@
         <label for="to" class="filter-label">To</label>
         <input type="date" id="to" name="to" class="form-control form-control-sm" value="<%= to %>">
         <button type="submit" class="btn btn-sm btn-primary">Show</button>
-        <% if (area || employee || from || to) { %><a href="/reports/history" class="filter-clear">Clear filters</a><% } %>
+        <% if (area || employee || from || to || hq) { %><a href="/reports/history" class="filter-clear">Clear filters</a><% } %>
       </div>
     </form>
 
     <section class="panel">
       <div class="panel-bar">
-        <% if (!dataAvailable) { %>The history is unavailable.<% } else if (!total) { %>No changes recorded<%= area || employee || from || to ? ' for these filters' : ' yet' %>.<% } else if (pageNumber === 1 && !hasMore) { %><%= fmt.number(total) %> <%= total === 1 ? 'change' : 'changes' %>, newest first<% } else { %>Showing <%= fmt.number(first) %>–<%= fmt.number(first + entries.length - 1) %> of <%= fmt.number(total) %>, newest first<% } %>
+        <% if (!dataAvailable) { %>The history is unavailable.<% } else if (!total) { %>No changes recorded<%= area || employee || from || to || hq ? ' for these filters' : ' yet' %>.<% } else if (pageNumber === 1 && !hasMore) { %><%= fmt.number(total) %> <%= total === 1 ? 'change' : 'changes' %>, newest first<% } else { %>Showing <%= fmt.number(first) %>–<%= fmt.number(first + entries.length - 1) %> of <%= fmt.number(total) %>, newest first<% } %>
       </div>
       <div class="table-scroll">
         <table class="data-table history-table">

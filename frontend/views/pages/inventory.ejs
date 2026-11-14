@@ -15,6 +15,16 @@
   const newProductIds = asSet(typeof newProducts !== 'undefined' ? newProducts : []);
   const newVariantIds = asSet(typeof newVariants !== 'undefined' ? newVariants : []);
   const updatedVariantIds = asSet(typeof updatedVariants !== 'undefined' ? updatedVariants : []);
+  // search and filters (this page only): server.js inventoryFilters / filterInventory
+  const f = typeof filters !== 'undefined' && filters ? filters : { q: '', category: '', stock: '', status: '' };
+  const c = typeof counts !== 'undefined' && counts ? counts : { low: 0, out: 0, in: 0, available: 0, unavailable: 0 };
+  const cats = typeof categoryNames !== 'undefined' && Array.isArray(categoryNames) ? categoryNames : [];
+  const filterQuery = extra => { const all = Object.assign({}, f, extra || {}); return Object.keys(all).filter(k => all[k]).map(k => k + '=' + encodeURIComponent(all[k])).join('&'); };
+  const invHref = extra => { const s = filterQuery(extra); return '/inventory' + (s ? '?' + s : ''); };
+  const filtering = Boolean(f.q || f.category || f.stock || f.status);
+  const shownVariants = productGroups.reduce((n, g) => n + g.variants.length, 0);
+  const shownUnits = productGroups.reduce((n, g) => n + g.variants.reduce((u, v) => u + (Number(v.Quantity) || 0), 0), 0);
+  const pill = (key, value, label) => { const on = f[key] === value; return { href: invHref({ [key]: value, adjust: '' }), on, label }; };
 %>
 <!doctype html>
 <html lang="en">
@@ -35,22 +45,46 @@
                   <span class="muted">Items with <%= lowStockThreshold %> or fewer units are highlighted as low stock.</span>
                 </header>
 
-                <section class="filter-bar" aria-label="Filter inventory">
+                <!-- Search and filters for this page only -->
+                <form class="filter-bar" method="GET" action="/inventory" role="search" aria-label="Search and filter inventory">
                   <div class="filter-group">
-                    <span class="filter-label">Show</span>
-                    <nav class="pills" aria-label="Which items">
-                      <a href="/inventory" class="<%= showLowOnly ? '' : 'active' %>"<% if (!showLowOnly) { %> aria-current="page"<% } %>>All items</a>
-                      <a href="/inventory?low=1" class="<%= showLowOnly ? 'active' : '' %>"<% if (showLowOnly) { %> aria-current="page"<% } %>>Low stock only (<%= lowTotal %>)</a>
-                    </nav>
+                    <%- include('../template/searchbox', { searchValue: f.q, searchLabel: 'Search inventory', searchPlaceholder: 'Search product, size, color…', clearHref: invHref({ q: '' }) }) %>
+                    <label for="category" class="filter-label">Category</label>
+                    <select id="category" name="category" class="form-select form-select-sm" style="width:auto" data-autosubmit>
+                      <option value="">All categories</option>
+                      <% cats.forEach(function(name) { %><option value="<%= name %>" <%= f.category === name ? 'selected' : '' %>><%= name %></option><% }); %>
+                    </select>
+                    <% if (f.stock) { %><input type="hidden" name="stock" value="<%= f.stock %>"><% } %>
+                    <% if (f.status) { %><input type="hidden" name="status" value="<%= f.status %>"><% } %>
+                    <button type="submit" class="btn btn-sm btn-primary">Search</button>
                   </div>
-                </section>
+                  <div class="filter-group">
+                    <span class="filter-label">Stock</span>
+                    <nav class="pills" aria-label="Stock level">
+                      <% [pill('stock', '', 'All'), pill('stock', 'low', 'Low stock (' + c.low + ')'), pill('stock', 'out', 'Out of stock (' + c.out + ')'), pill('stock', 'in', 'In stock (' + c.in + ')')].forEach(function(p) { %>
+                        <a href="<%= p.href %>" class="<%= p.on ? 'active' : '' %>"<% if (p.on) { %> aria-current="true"<% } %>><%= p.label %></a>
+                      <% }); %>
+                    </nav>
+                    <span class="filter-label filter-label-gap">Status</span>
+                    <nav class="pills" aria-label="Product status">
+                      <% [pill('status', '', 'All'), pill('status', 'available', 'Available (' + c.available + ')'), pill('status', 'unavailable', 'Not available (' + c.unavailable + ')')].forEach(function(p) { %>
+                        <a href="<%= p.href %>" class="<%= p.on ? 'active' : '' %>"<% if (p.on) { %> aria-current="true"<% } %>><%= p.label %></a>
+                      <% }); %>
+                    </nav>
+                    <% if (filtering) { %><a href="/inventory" class="filter-clear">Clear filters</a><% } %>
+                  </div>
+                </form>
 
                 <section class="panel">
-                  <div class="panel-bar">
-                    <% if (showLowOnly) { %>Showing <%= lowTotal %> low stock <%= lowTotal === 1 ? 'item' : 'items' %> (<%= lowStockThreshold %> or fewer) · <% } %>
-                    <%= everyGroup.length %> <%= everyGroup.length === 1 ? 'product' : 'products' %>,
-                    <%= variantCount %> <%= variantCount === 1 ? 'variant' : 'variants' %>,
-                    <%= unitCount %> <%= unitCount === 1 ? 'unit' : 'units' %> in stock
+                  <div class="panel-bar" aria-live="polite">
+                    <% if (filtering) { %>
+                      Showing <%= productGroups.length %> of <%= everyGroup.length %> <%= everyGroup.length === 1 ? 'product' : 'products' %>:
+                      <%= shownVariants %> <%= shownVariants === 1 ? 'variant' : 'variants' %>, <%= shownUnits %> <%= shownUnits === 1 ? 'unit' : 'units' %><% if (f.q) { %> · search “<%= f.q %>”<% } %>
+                    <% } else { %>
+                      <%= everyGroup.length %> <%= everyGroup.length === 1 ? 'product' : 'products' %>,
+                      <%= variantCount %> <%= variantCount === 1 ? 'variant' : 'variants' %>,
+                      <%= unitCount %> <%= unitCount === 1 ? 'unit' : 'units' %> in stock
+                    <% } %>
                   </div>
                   <div class="table-scroll">
                     <table class="data-table inv-table">
@@ -67,7 +101,14 @@
                       </thead>
                       <tbody>
                         <% if (productGroups.length === 0) { %>
-                          <tr><td colspan="6" class="empty-cell"><%= (typeof dataAvailable !== 'undefined' && !dataAvailable) ? 'Inventory could not be loaded. Check the message above.' : showLowOnly ? 'Nothing is running low right now.' : 'No products yet.' %></td></tr>
+                          <tr><td colspan="6" class="empty-cell">
+                            <% if (typeof dataAvailable !== 'undefined' && !dataAvailable) { %>Inventory could not be loaded. Check the message above.
+                            <% } else if (f.q || f.category || f.status) { %>No items match these filters. <a href="/inventory">Clear filters</a>
+                            <% } else if (f.stock === 'low') { %>Nothing is running low right now.
+                            <% } else if (f.stock === 'out') { %>Nothing is out of stock right now.
+                            <% } else if (f.stock === 'in') { %>Nothing is in stock right now.
+                            <% } else { %>No products yet.<% } %>
+                          </td></tr>
                         <% } %>
                         <% productGroups.forEach(function(group) { %>
                           <% const gid = String(group.id); %>
@@ -122,6 +163,7 @@
                                 <td class="count">
                                   <form action="/inventory/<%= vid %>/adjust" method="POST" class="inv-adjust" data-was="<%= qty %>">
                                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                    <input type="hidden" name="filters" value="<%= filterQuery() %>">
                                     <div class="inv-adjust-row">
                                       <button type="button" class="step-btn" data-step="-1" aria-label="One less">−</button>
                                       <button type="button" class="step-btn" data-step="1" aria-label="One more">+</button>
@@ -130,7 +172,7 @@
                                     </div>
                                     <div class="inv-adjust-actions">
                                       <button type="submit" class="scc-btn">Save</button>
-                                      <a href="/inventory#v<%= vid %>" class="btn btn-outline-secondary">Cancel</a>
+                                      <a href="<%= invHref() %>#v<%= vid %>" class="btn btn-outline-secondary">Cancel</a>
                                     </div>
                                     <span class="inv-adjust-note">Was <%= qty %></span>
                                   </form>
@@ -140,7 +182,7 @@
                               <% } %>
                               <td class="menu-cell">
                                 <%- include('../template/rowmenu', { menuLabel: 'Actions for ' + group.name + ', ' + row.Size + ' / ' + row.Color, menuItems: row.Variant_ID == null ? [] : [
-                                  authenticated && !isAdjusting && { label: 'Adjust stock', href: '/inventory?adjust=' + vid + '#v' + vid, icon: 'adjust' },
+                                  authenticated && !isAdjusting && { label: 'Adjust stock', href: invHref({ adjust: vid }) + '#v' + vid, icon: 'adjust' },
                                   isManager && { label: 'Edit variant', href: '/variants/' + vid + '/edit', icon: 'edit' }
                                 ] }) %>
                               </td>

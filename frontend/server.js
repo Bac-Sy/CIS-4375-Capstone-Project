@@ -498,6 +498,63 @@ function groupInventory(rows, products, categories, threshold) {
     };
   }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
+// INVENTORY FILTERS (this page only): ?q= search, ?category=, ?stock=low|out|in, ?status=available|unavailable.
+// The old ?low=1 link (Dashboard) still means stock=low.
+function cleanSearch(value) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 100) : '';
+}
+function inventoryFilters(query, groups) {
+  const q = cleanSearch(query.q);
+  const stock = ['low', 'out', 'in'].includes(query.stock) ? query.stock : (query.low === '1' ? 'low' : '');
+  const status = ['available', 'unavailable'].includes(query.status) ? query.status : '';
+  const wanted = typeof query.category === 'string' ? query.category.slice(0, 100) : '';
+  // only a category that exists (groups is null when we just rebuild the address)
+  const category = wanted && (!groups || groups.some(g => g.category === wanted)) ? wanted : '';
+  return { q, category, stock, status };
+}
+function inventoryQuery(filters, extra = {}) {
+  const all = { ...filters, ...extra };
+  return Object.keys(all).filter(k => all[k]).map(k => `${k}=${encodeURIComponent(all[k])}`).join('&');
+}
+function filterInventory(allGroups, filters, threshold) {
+  const words = filters.q.toLowerCase().split(' ').filter(Boolean);
+  const has = (text, word) => String(text || '').toLowerCase().includes(word);
+  const stockOk = v => {
+    const qty = Number(v.Quantity) || 0;
+    if (filters.stock === 'low') return qty <= threshold;
+    if (filters.stock === 'out') return qty === 0;
+    if (filters.stock === 'in') return qty > 0;
+    return true;
+  };
+  // counts for the pills: for everything that matches the search, category and status
+  const counts = { low: 0, out: 0, in: 0, available: 0, unavailable: 0 };
+  const groups = [];
+  for (const g of allGroups) {
+    if (filters.category && g.category !== filters.category) continue;
+    // every search word must be found in the product (name, category) or in the variant (size, color, location)
+    const variantText = v => [g.name, g.category, v.Size, v.Color, v.Location].join(' ');
+    const productMatches = words.every(w => has(g.name, w) || has(g.category, w));
+    const matching = words.length ? g.variants.filter(v => words.every(w => has(variantText(v), w))) : g.variants;
+    if (words.length && !productMatches && !matching.length) continue;
+    const searched = productMatches ? g.variants : matching;
+    if (!filters.status || (filters.status === 'available') === (g.available !== false)) {
+      for (const v of searched) {
+        const qty = Number(v.Quantity) || 0;
+        if (qty <= threshold) counts.low++;
+        if (qty === 0) counts.out++;
+        if (qty > 0) counts.in++;
+      }
+    }
+    if (!filters.stock || searched.some(stockOk)) counts[g.available === false ? 'unavailable' : 'available']++;
+    if (filters.status && (filters.status === 'available') !== (g.available !== false)) continue;
+    const variants = searched.filter(stockOk);
+    // a stock filter hides products with nothing left that fits it (and products with no variants)
+    if (filters.stock && !variants.length) continue;
+    groups.push(variants === g.variants ? g : { ...g, variants });
+  }
+  return { groups, counts };
+}
+
 app.get('/inventory', pageAccess, async (req, res) => {
   try {
     const [result, products, categories] = await Promise.all([
@@ -506,33 +563,34 @@ app.get('/inventory', pageAccess, async (req, res) => {
       apiGet('/api/categories').catch(() => [])
     ]);
     const allGroups = groupInventory(result.rows, products, categories, result.threshold);
-    // ?low=1 shows only the low stock variants (and the products they belong to).
-    const lowOnly = req.query.low === '1';
-    const lowCount = allGroups.reduce((n, g) => n + g.low, 0);
-    const groups = lowOnly
-      ? allGroups.filter(g => g.low).map(g => ({ ...g, variants: g.variants.filter(v => Number(v.Quantity) <= result.threshold) }))
-      : allGroups;
+    const filters = inventoryFilters(req.query, allGroups);
+    const { groups, counts } = filterInventory(allGroups, filters, result.threshold);
     // ?adjust=<Variant_ID> opens that row in Adjust stock mode (chosen from its ⋯ menu).
     const adjusting = /^[1-9]\d*$/.test(String(req.query.adjust || '')) ? String(req.query.adjust) : null;
     const recent = recentIds(req);
     return page(req, res, 'inventory', {
-      ...result, groups, allGroups, lowOnly, lowCount, adjusting, dataAvailable: true,
+      ...result, groups, allGroups, filters, counts, lowOnly: filters.stock === 'low', lowCount: counts.low,
+      categoryNames: [...new Set(allGroups.map(g => g.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+      adjusting, dataAvailable: true,
       newProducts: recent.products || [], newVariants: recent.variants || [], updatedVariants: recent.adjusted || []
     });
   } catch (err) {
     console.error('Inventory load failed:', err.message);
     return page(req, res, 'inventory', {
       items: [], rows: [], groups: [], allGroups: [], lowOnly: false, lowCount: 0, adjusting: null, threshold: 5, dataAvailable: false,
+      filters: inventoryFilters({}, []), counts: { low: 0, out: 0, in: 0, available: 0, unavailable: 0 }, categoryNames: [],
       message: apiError(err, 'Inventory could not be loaded.')
     });
   }
 });
 app.post('/inventory/:variantId/adjust', signedIn, async (req, res) => {
-  const back = `/inventory#v${encodeURIComponent(req.params.variantId)}`;
+  // come back to the same filtered view (the form sends the page's filters along)
+  const kept = inventoryQuery(inventoryFilters(Object.fromEntries(new URLSearchParams(String(req.body.filters || '').slice(0, 300))), null));
+  const back = `/inventory${kept ? '?' + kept : ''}#v${encodeURIComponent(req.params.variantId)}`;
   const quantity = String(req.body.New_Quantity ?? '').trim();
   if (!/^\d+$/.test(quantity) || !Number.isSafeInteger(Number(quantity))) {
     return flashAndRedirect(req, res, 'Enter the new stock count as a whole number (0 or more).',
-      `/inventory?adjust=${encodeURIComponent(req.params.variantId)}#v${encodeURIComponent(req.params.variantId)}`);
+      `/inventory?${kept ? kept + '&' : ''}adjust=${encodeURIComponent(req.params.variantId)}#v${encodeURIComponent(req.params.variantId)}`);
   }
   try {
     const result = await apiPut('/adjust/inventory', {
@@ -565,9 +623,16 @@ app.get('/orders', pageAccess, async (req, res) => {
   const selected = typeof req.query.type === 'string' ? req.query.type : '';
   // 100 orders per page, newest first; ?page=2 shows the next 100 older ones.
   const pageNumber = /^[1-9]\d{0,5}$/.test(String(req.query.page || '')) ? Number(req.query.page) : 1;
-  const fallback = { rows: [], types: [], selected, limit: 100, pageNumber, hasMore: false, dataAvailable: false };
+  // ?q= searches the orders (order #, product, size, color, type, employee); ?from= / ?to= limit the dates.
+  // The search runs in the database query, so it covers every order, not just this page of 100.
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
+  const q = cleanSearch(req.query.q);
+  let from = validDate(req.query.from) ? String(req.query.from) : '';
+  let to = validDate(req.query.to) ? String(req.query.to) : '';
+  if (from && to && from > to) [from, to] = [to, from];
+  const fallback = { rows: [], types: [], selected, q, from, to, limit: 100, pageNumber, hasMore: false, dataAvailable: false };
   try {
-    const reply = await apiGet('/orders', { type: selected, limit: 100, offset: (pageNumber - 1) * 100 });
+    const reply = await apiGet('/orders', { type: selected, q, from, to, limit: 100, offset: (pageNumber - 1) * 100 });
     const rows = arrayData(Array.isArray(reply) ? reply : reply?.rows).map(normalizeOrder);
     return page(req, res, 'orders', {
       ...fallback, rows, types: arrayData(reply?.types),
@@ -810,10 +875,11 @@ app.get('/reports/history', managerOnly, async (req, res) => {
   const person = typeof req.query.employee === 'string' && /^\d+$/.test(req.query.employee) ? req.query.employee : '';
   const from = validDate(req.query.from) ? String(req.query.from) : '';
   const to = validDate(req.query.to) ? String(req.query.to) : '';
+  const q = cleanSearch(req.query.q);
   const exporting = ['pdf', 'xlsx', 'csv'].includes(req.query.format);
   // the PDF and Excel file hold every matching change; the page shows 100 at a time
   const pageNumber = !exporting && /^[1-9]\d{0,5}$/.test(String(req.query.page || '')) ? Number(req.query.page) : 1;
-  const filters = { area, employee: person, from, to };
+  const filters = { area, employee: person, from, to, q };
   const fallback = { ...filters, pageNumber, entries: [], total: 0, hasMore: false, areas: [], people: [], dataAvailable: false };
   try {
     const reply = await apiRequest('GET', '/history', {

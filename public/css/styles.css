@@ -1212,6 +1212,15 @@ option.opt-new { background: var(--row-new); color: #a3002a; font-weight: 700; }
 .filter-clear { font-size: 0.85rem; font-weight: 600; }
 .row-link { text-decoration: none; }
 .row-link:hover strong { text-decoration: underline; }
+/* Search box (each page searches only itself) */
+.search-box { position: relative; display: inline-flex; align-items: center; flex: 0 1 300px; width: 300px; min-width: 0; }
+.search-box .search-icon { position: absolute; left: 0.65rem; color: var(--muted); pointer-events: none; }
+.filter-bar .search-box input.form-control, .search-box input { width: 100%; padding-left: 2rem; padding-right: 2rem; border-radius: 99px; }
+.search-box input::-webkit-search-cancel-button { display: none; }
+.search-clear { position: absolute; right: 0.35rem; display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; color: var(--muted); text-decoration: none; font-size: 0.85rem; }
+.search-clear:hover, .search-clear:focus-visible { background: var(--surface-2); color: var(--ink); }
+.filter-label-gap { margin-left: 0.75rem; }
+@media (max-width: 640px) { .search-box { width: 100%; flex-basis: 100%; } .filter-label-gap { margin-left: 0; } }
 @media print { .filter-bar, .report-tabs { display: none !important; } }
 
 

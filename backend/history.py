@@ -269,6 +269,8 @@ def register_history(app, connect, read_query, read_settings):
         person = str(request.args.get('employee', '')).strip()
         start = str(request.args.get('from', '')).strip()[:10]
         end = str(request.args.get('to', '')).strip()[:10]
+        # ?q= search (Edit history only): every word must appear in the entry (name, type, who, changes)
+        words = ' '.join(str(request.args.get('q', '')).split())[:100].casefold().split()
         try:
             limit = min(max(int(request.args.get('limit', 100)), 1), 1000)
             offset = max(int(request.args.get('offset', 0)), 0)
@@ -290,6 +292,13 @@ def register_history(app, connect, read_query, read_settings):
                         continue
                     if (start and day < start) or (end and day > end):
                         continue
+                    if words:
+                        text = ' '.join(str(entry.get(k, '')) for k in ('target', 'kind', 'area', 'action', 'employee'))
+                        for change in entry.get('changes') or []:
+                            text += ' ' + ' '.join(str(change.get(k, '')) for k in ('field', 'from', 'to'))
+                        text = text.casefold()
+                        if not all(word in text for word in words):
+                            continue
                     entries.append(entry)
         entries.reverse()                        # newest first
         return jsonify({
