@@ -48,7 +48,8 @@
                       <thead>
                         <tr>
                           <th scope="col">Product / variant</th>
-                          <th scope="col">Category / location</th>
+                          <th scope="col">Category</th>
+                          <th scope="col">Location</th>
                           <th scope="col" class="num">Price</th>
                           <th scope="col" class="count">In stock</th>
                           <th scope="col" class="menu-cell"><span class="visually-hidden">Actions</span></th>
@@ -56,7 +57,7 @@
                       </thead>
                       <tbody>
                         <% if (productGroups.length === 0) { %>
-                          <tr><td colspan="5" class="empty-cell"><%= (typeof dataAvailable !== 'undefined' && !dataAvailable) ? 'Inventory could not be loaded. Check the message above.' : showLowOnly ? 'Nothing is running low right now.' : 'No products yet.' %></td></tr>
+                          <tr><td colspan="6" class="empty-cell"><%= (typeof dataAvailable !== 'undefined' && !dataAvailable) ? 'Inventory could not be loaded. Check the message above.' : showLowOnly ? 'Nothing is running low right now.' : 'No products yet.' %></td></tr>
                         <% } %>
                         <% productGroups.forEach(function(group) { %>
                           <% const gid = String(group.id); %>
@@ -70,11 +71,13 @@
                                   <span class="inv-toggle-spacer"></span>
                                 <% } %>
                                 <strong><%= group.name %></strong>
+                                <span class="inv-count"><%= group.variants.length %> <%= group.variants.length === 1 ? 'variant' : 'variants' %></span>
                                 <% if (group.available === false) { %><span class="tag tag-outline">Not available</span><% } %>
                                 <% if (group.low) { %><span class="tag tag-red"><%= group.low %> low</span><% } %>
                               </div>
                             </td>
-                            <td class="muted"><%= group.category || 'No category' %> · <%= group.variants.length %> <%= group.variants.length === 1 ? 'variant' : 'variants' %></td>
+                            <td><%= group.category || 'No category' %></td>
+                            <td></td>
                             <td></td>
                             <% if (group.variants.length) { %>
                               <td class="count">Total <%= group.total %></td>
@@ -97,7 +100,8 @@
                                 <%= row.Size || '?' %> / <%= row.Color || '?' %>
                                 <% if (low) { %><span class="tag tag-red"><%= qty === 0 ? 'Out' : 'Low' %></span><% } %>
                               </td>
-                              <td class="muted"><%= row.Location || 'Unassigned' %></td>
+                              <td></td>
+                              <td><%= row.Location || 'Unassigned' %></td>
                               <td class="num"><%= row.Price == null ? '' : money(row.Price) %></td>
                               <% if (isAdjusting && authenticated) { %>
                                 <td class="count">
