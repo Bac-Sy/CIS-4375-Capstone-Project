@@ -29,7 +29,7 @@
     <% if (t) { %>
     <% if (showLow) { %><p class="empty" style="margin:-0.4rem 0 0.6rem">Totals below are for all stock; the table lists only low and out of stock items.</p><% } %>
     <section class="stat-row" aria-label="Totals">
-      <div class="stat"><span class="stat-label">Units in stock</span><strong><%= fmt.number(t.units) %></strong><span class="stat-sub"><%= fmt.number(t.items) %> <%= t.items === 1 ? 'item' : 'items' %> (size / color) of <%= fmt.number(t.products) %> <%= t.products === 1 ? 'product' : 'products' %></span></div>
+      <div class="stat"><span class="stat-label">Units in stock</span><strong><%= fmt.number(t.units) %></strong><span class="stat-sub"><%= fmt.number(t.products) %> <%= t.products === 1 ? 'product' : 'products' %>, in <%= fmt.number(t.items) %> <%= t.items === 1 ? 'size and color' : 'sizes and colors' %></span></div>
       <% if (isMgr) { %>
         <div class="stat"><span class="stat-label">Stock value at cost</span><strong><%= fmt.money(t.value_cost) %></strong><span class="stat-sub">in stock × cost: what it cost the store</span></div>
         <div class="stat"><span class="stat-label">Stock value at price</span><strong><%= fmt.money(t.value_retail) %></strong><span class="stat-sub">in stock × price: if it all sold</span></div>

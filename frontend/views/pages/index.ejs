@@ -178,7 +178,7 @@
           <% if (onHand) { %>
             <div class="on-hand">
               <p class="sales-total"><%= displayFmt.number(onHand.units) %> <%= onHand.units === 1 ? 'unit' : 'units' %> in stock</p>
-              <p class="sales-note">across <%= displayFmt.number(onHand.items) %> <%= onHand.items === 1 ? 'item' : 'items' %> (size / color) of <%= displayFmt.number(onHand.products) %> <%= onHand.products === 1 ? 'product' : 'products' %></p>
+              <p class="sales-note"><%= displayFmt.number(onHand.products) %> <%= onHand.products === 1 ? 'product' : 'products' %>, in <%= displayFmt.number(onHand.items) %> <%= onHand.items === 1 ? 'size and color' : 'sizes and colors' %></p>
             </div>
           <% } %>
           <h3 class="dash-sub">Low stock <span class="muted">(<%= threshold %> or fewer)</span></h3>
