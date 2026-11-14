@@ -198,6 +198,14 @@ def register_reporting_routes(app, connect, read_query):
             WHERE i.Quantity <= %s
             ORDER BY i.Quantity, p.Name, v.Variant_ID LIMIT 5
         ''', (threshold(),))
+        # Current inventory: total units in stock, how many items (variants) and products they make up.
+        on_hand = fetch('''
+            SELECT COALESCE(SUM(i.Quantity), 0) AS units, COUNT(*) AS items,
+                   COUNT(DISTINCT v.Product_ID) AS products
+            FROM Inventory i
+            JOIN Product_Variant v ON v.Variant_ID = i.Variant_ID
+        ''')
+        on_hand = on_hand[0] if on_hand else {}
         # Stock in vs. out: units sold and units restocked in each of the last 4 weeks (7-day blocks
         # ending today). Adjustments are left out: they correct a count, they aren't stock coming in or going out.
         weeks_start = date.today() - timedelta(days=27)
@@ -224,6 +232,9 @@ def register_reporting_routes(app, connect, read_query):
             'recent_orders': recent_by_type['Sale'],
             'recent_by_type': recent_by_type,
             'low_stock': low,
+            'inventory_totals': {'units': int(on_hand.get('units') or 0),
+                                 'items': int(on_hand.get('items') or 0),
+                                 'products': int(on_hand.get('products') or 0)},
             'low_stock_threshold': threshold(),
             'stock_weeks': weeks
         })

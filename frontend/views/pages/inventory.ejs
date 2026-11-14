@@ -4,8 +4,11 @@
   const productGroups = (typeof groups !== 'undefined' && Array.isArray(groups)) ? groups : [];
   const adjustId = typeof adjusting !== 'undefined' && adjusting ? String(adjusting) : null;
   const isManager = typeof Role !== 'undefined' && Role === 'Manager';
-  const variantCount = productGroups.reduce((n, g) => n + g.variants.length, 0);
-  const unitCount = productGroups.reduce((n, g) => n + g.total, 0);
+  const everyGroup = (typeof allGroups !== 'undefined' && Array.isArray(allGroups)) ? allGroups : productGroups;
+  const showLowOnly = typeof lowOnly !== 'undefined' && lowOnly;
+  const lowTotal = typeof lowCount !== 'undefined' ? Number(lowCount) || 0 : 0;
+  const variantCount = everyGroup.reduce((n, g) => n + g.variants.length, 0);
+  const unitCount = everyGroup.reduce((n, g) => n + g.total, 0);
   const money = value => (typeof fmt !== 'undefined' && fmt.money) ? fmt.money(value) : value;
 %>
 <!doctype html>
@@ -27,9 +30,15 @@
                   <span class="muted">Items with <%= lowStockThreshold %> or fewer units are highlighted as low stock.</span>
                 </header>
 
+                <nav class="tabs" aria-label="Filter inventory">
+                  <a href="/inventory" class="<%= showLowOnly ? '' : 'active' %>"<% if (!showLowOnly) { %> aria-current="page"<% } %>>All items</a>
+                  <a href="/inventory?low=1" class="<%= showLowOnly ? 'active' : '' %>"<% if (showLowOnly) { %> aria-current="page"<% } %>>Low stock only (<%= lowTotal %>)</a>
+                </nav>
+
                 <section class="panel">
                   <div class="panel-bar">
-                    <%= productGroups.length %> <%= productGroups.length === 1 ? 'product' : 'products' %>,
+                    <% if (showLowOnly) { %>Showing <%= lowTotal %> low stock <%= lowTotal === 1 ? 'item' : 'items' %> (<%= lowStockThreshold %> or fewer) · <% } %>
+                    <%= everyGroup.length %> <%= everyGroup.length === 1 ? 'product' : 'products' %>,
                     <%= variantCount %> <%= variantCount === 1 ? 'variant' : 'variants' %>,
                     <%= unitCount %> <%= unitCount === 1 ? 'unit' : 'units' %> in stock
                   </div>
@@ -47,7 +56,7 @@
                       </thead>
                       <tbody>
                         <% if (productGroups.length === 0) { %>
-                          <tr><td colspan="5" class="empty-cell"><%= (typeof dataAvailable !== 'undefined' && !dataAvailable) ? 'Inventory could not be loaded. Check the message above.' : 'No products yet.' %></td></tr>
+                          <tr><td colspan="5" class="empty-cell"><%= (typeof dataAvailable !== 'undefined' && !dataAvailable) ? 'Inventory could not be loaded. Check the message above.' : showLowOnly ? 'Nothing is running low right now.' : 'No products yet.' %></td></tr>
                         <% } %>
                         <% productGroups.forEach(function(group) { %>
                           <% const gid = String(group.id); %>
@@ -61,6 +70,7 @@
                                   <span class="inv-toggle-spacer"></span>
                                 <% } %>
                                 <strong><%= group.name %></strong>
+                                <% if (group.available === false) { %><span class="tag tag-outline">Not available</span><% } %>
                                 <% if (group.low) { %><span class="tag tag-red"><%= group.low %> low</span><% } %>
                               </div>
                             </td>

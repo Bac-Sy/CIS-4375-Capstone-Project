@@ -420,6 +420,7 @@ async function loadInventory() {
       Color: x.Color ?? x.color,
       Location: x.Location ?? x.location,
       Category: x.Category ?? x.category ?? '',
+      Available: x.Available ?? x.available ?? x.Availability ?? null,
       Quantity: x.Quantity ?? x.quantity,
       Price: x.Price ?? x.price
     }));
@@ -438,16 +439,20 @@ function groupInventory(rows, products, categories, threshold) {
   for (const row of rows) {
     const key = String(row.Product_ID ?? row.Product);
     if (!groups.has(key)) {
-      groups.set(key, { id: row.Product_ID, name: row.Product || 'Unknown product', category: row.Category || '', variants: [] });
+      groups.set(key, { id: row.Product_ID, name: row.Product || 'Unknown product', category: row.Category || '',
+        available: row.Available === undefined || row.Available === null ? true : Boolean(Number(row.Available)), variants: [] });
     }
     groups.get(key).variants.push(row);
   }
   for (const p of arrayData(products)) {
     const key = String(p.Product_ID);
+    const available = p.Availability === undefined || p.Availability === null ? true : Boolean(Number(p.Availability));
     if (groups.has(key)) {
-      if (!groups.get(key).category) groups.get(key).category = categoryNames.get(String(p.Category_ID)) || '';
+      const group = groups.get(key);
+      if (!group.category) group.category = categoryNames.get(String(p.Category_ID)) || '';
+      group.available = available;
     } else {
-      groups.set(key, { id: p.Product_ID, name: p.Name, category: categoryNames.get(String(p.Category_ID)) || '', variants: [] });
+      groups.set(key, { id: p.Product_ID, name: p.Name, category: categoryNames.get(String(p.Category_ID)) || '', available, variants: [] });
     }
   }
   return [...groups.values()].map(g => ({
@@ -463,14 +468,20 @@ app.get('/inventory', pageAccess, async (req, res) => {
       apiGet('/api/products').catch(() => []),
       apiGet('/api/categories').catch(() => [])
     ]);
-    const groups = groupInventory(result.rows, products, categories, result.threshold);
+    const allGroups = groupInventory(result.rows, products, categories, result.threshold);
+    // ?low=1 shows only the low stock variants (and the products they belong to).
+    const lowOnly = req.query.low === '1';
+    const lowCount = allGroups.reduce((n, g) => n + g.low, 0);
+    const groups = lowOnly
+      ? allGroups.filter(g => g.low).map(g => ({ ...g, variants: g.variants.filter(v => Number(v.Quantity) <= result.threshold) }))
+      : allGroups;
     // ?adjust=<Variant_ID> opens that row in Adjust stock mode (chosen from its ⋯ menu).
     const adjusting = /^[1-9]\d*$/.test(String(req.query.adjust || '')) ? String(req.query.adjust) : null;
-    return page(req, res, 'inventory', { ...result, groups, adjusting, dataAvailable: true });
+    return page(req, res, 'inventory', { ...result, groups, allGroups, lowOnly, lowCount, adjusting, dataAvailable: true });
   } catch (err) {
     console.error('Inventory load failed:', err.message);
     return page(req, res, 'inventory', {
-      items: [], rows: [], groups: [], adjusting: null, threshold: 5, dataAvailable: false,
+      items: [], rows: [], groups: [], allGroups: [], lowOnly: false, lowCount: 0, adjusting: null, threshold: 5, dataAvailable: false,
       message: apiError(err, 'Inventory could not be loaded.')
     });
   }

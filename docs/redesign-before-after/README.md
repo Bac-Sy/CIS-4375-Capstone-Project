@@ -7,8 +7,8 @@ The data is mostly test records (one product, lots of +1/−1 adjustments), so t
 
 | # | Page | What changed |
 |---|---|---|
-| 1 | [Dashboard](#1-dashboard) | Recent orders shows Sales, with Restocks / Adjustments tabs; "Stock in vs. out" replaces the flat trend graph |
-| 2 | [Inventory](#2-inventory) | Variants grouped under their product with a total; ⋯ menu; Adjust stock with − / + |
+| 1 | [Dashboard](#1-dashboard) | Recent orders shows Sales, with Restocks / Adjustments tabs; current inventory (units in stock) above Low stock; "Stock in vs. out" replaces the flat trend graph |
+| 2 | [Inventory](#2-inventory) | Variants grouped under their product with a total; ⋯ menu; Adjust stock with − / +; "Low stock only" filter; "Not available" tag |
 | 3 | [Add variants](#3-add-variants) | Pick sizes and colors, check the combinations you have, each with its own stock, location, price and cost |
 | 4 | [Edit variant](#4-edit-variant) | Named "Satin Midi Dress – M / Black" instead of "Edit variant #1" |
 | 5 | [Orders](#5-orders) | One actions column with a ⋯ menu; "Order #" |
@@ -25,13 +25,17 @@ The data is mostly test records (one product, lots of +1/−1 adjustments), so t
 |---|---|
 | ![Dashboard before](before-1-dashboard.png) | ![Dashboard after](after-1-dashboard.png) |
 
-Before: 4 of the 5 "Recent Orders" were adjustments, and the trend graph was a flat line with no numbers.
+Before: 4 of the 5 "Recent Orders" were adjustments, the trend graph was a flat line with no numbers, and there was no current inventory figure (demo step 9 shows it).
 
 ## 2. Inventory
 
 | Before | After |
 |---|---|
 | ![Inventory before](before-2-inventory.png) | ![Inventory after](after-2-inventory.png) |
+
+After, with the **Low stock only** filter (used in demo step 8):
+
+![Inventory low stock filter](after-2c-inventory-low-stock-filter.png)
 
 After, in Adjust stock mode (⋯ → Adjust stock):
 

@@ -969,3 +969,7 @@ h1 {
   .same-for-all { grid-template-columns: 1fr; }
   .inv-variant td:first-child { padding-left: 2.2rem; }
 }
+
+.dash-sub { margin: 0.4rem 0 0.7rem; font-size: 0.95rem; font-weight: 700; }
+.on-hand { margin-bottom: 0.9rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--line); }
+.on-hand .sales-note { margin-bottom: 0; }
