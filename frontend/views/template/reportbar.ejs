@@ -1,0 +1,25 @@
+<%
+  // Shared top of every report page: report tabs, plus Print / Save as PDF and Download for Excel.
+  // Include with: include('../template/reportbar', { reportKey: 'sales', csvHref: '/reports/sales?...&format=csv', reportTitle: 'Sales report', reportSubtitle: '…' })
+  const barKey = typeof reportKey !== 'undefined' ? reportKey : '';
+  const barCsv = typeof csvHref !== 'undefined' ? csvHref : '';
+  const barTitle = typeof reportTitle !== 'undefined' ? reportTitle : 'Report';
+  const barSubtitle = typeof reportSubtitle !== 'undefined' ? reportSubtitle : '';
+  const reportTabs = [['sales', 'Sales report', '/reports/sales'], ['inventory', 'Inventory report', '/reports/inventory'], ['best', 'Best sellers', '/reports/best-sellers']];
+%>
+<header class="page-header page-header-row report-head">
+  <div>
+    <h1><%= barTitle %></h1>
+    <% if (barSubtitle) { %><p class="page-sub"><%= barSubtitle %></p><% } %>
+  </div>
+  <div class="report-actions no-print">
+    <button type="button" class="btn btn-outline-secondary" onclick="window.print()">Print / Save as PDF</button>
+    <% if (barCsv) { %><a class="scc-btn" href="<%= barCsv %>">Download for Excel (CSV)</a><% } %>
+  </div>
+</header>
+<nav class="tabs no-print" aria-label="Reports">
+  <% reportTabs.forEach(function(t) { %>
+    <a href="<%= t[2] %>" class="<%= barKey === t[0] ? 'active' : '' %>"<% if (barKey === t[0]) { %> aria-current="page"<% } %>><%= t[1] %></a>
+  <% }); %>
+</nav>
+<p class="print-only report-print-line">Space City Couture · <%= barTitle %><%= barSubtitle ? ' · ' + barSubtitle : '' %></p>

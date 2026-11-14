@@ -12,19 +12,20 @@
                 <%- include('../template/topbar'); %>
                 <%- include('../template/messages'); %>
 
-                <header class="page-header">
-                  <h1>Best sellers</h1>
-                </header>
+                <% const periodLabel = (periods.find(p => p.days === days) || {}).label || ''; %>
+                <%- include('../template/reportbar', { reportKey: 'best', reportTitle: 'Best sellers',
+                     reportSubtitle: periodLabel + (view === 'item' ? ' · by size and color' : ' · by product'),
+                     csvHref: '/reports/best-sellers?days=' + days + '&view=' + view + '&format=csv' }); %>
 
                 <!-- Time period. Keeps the current view (product or item) when switching. -->
-                <nav class="tabs" aria-label="Report period">
+                <nav class="tabs no-print" aria-label="Report period">
                   <% periods.forEach(p => { %>
                     <a href="/reports/best-sellers?days=<%= p.days %>&view=<%= view %>" class="<%= days === p.days ? 'active' : '' %>"<% if (days === p.days) { %> aria-current="page"<% } %>><%= p.label %></a>
                   <% }) %>
                 </nav>
 
                 <!-- By product adds all sizes and colors together. By item lists each size and color separately. -->
-                <nav class="tabs" aria-label="Group by">
+                <nav class="tabs no-print" aria-label="Group by">
                   <a href="/reports/best-sellers?days=<%= days %>&view=product" class="<%= view === 'product' ? 'active' : '' %>"<% if (view === 'product') { %> aria-current="page"<% } %>>By product</a>
                   <a href="/reports/best-sellers?days=<%= days %>&view=item" class="<%= view === 'item' ? 'active' : '' %>"<% if (view === 'item') { %> aria-current="page"<% } %>>By size and color</a>
                 </nav>

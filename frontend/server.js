@@ -552,10 +552,20 @@ app.get('/reports/best-sellers', pageAccess, async (req, res) => {
   try {
     // 30 seconds instead of the usual 10: the report runs two bigger queries and the AWS database can be slow.
     const reply = await apiRequest('GET', '/report/best/sellers', { query: { days }, timeoutMs: 30000 });
+    const byProduct = arrayData(reply?.by_product);
+    const byItem = arrayData(reply?.by_item);
+    if (req.query.format === 'csv') {
+      const period = reportPeriods.find(p => p.days === days).label;
+      return view === 'item'
+        ? sendCsv(res, `best-sellers-by-item-${days || 'all'}-days.csv`, ['Rank', 'Product', 'Size', 'Color', 'Units sold', 'Sales', 'Period'],
+            byItem.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Size, r.Color, r.Units_Sold, Number(r.Revenue).toFixed(2), period]))
+        : sendCsv(res, `best-sellers-by-product-${days || 'all'}-days.csv`, ['Rank', 'Product', 'Category', 'Units sold', 'Sales', 'Period'],
+            byProduct.map(r => [r.Units_Sold > 0 ? r.Rank : '', r.Product, r.Category, r.Units_Sold, Number(r.Revenue).toFixed(2), period]));
+    }
     return page(req, res, 'bestsellers', {
       ...fallback,
-      byProduct: arrayData(reply?.by_product),
-      byItem: arrayData(reply?.by_item),
+      byProduct,
+      byItem,
       totalUnits: Number(reply?.total_units) || 0,
       totalRevenue: Number(reply?.total_revenue) || 0,
       dataAvailable: true
@@ -564,6 +574,94 @@ app.get('/reports/best-sellers', pageAccess, async (req, res) => {
     return page(req, res, 'bestsellers', {
       ...fallback, message: apiError(err, 'The best sellers report is unavailable.')
     });
+  }
+});
+
+// REPORTS (R-10): an inventory report and a sales report, each printable (Print / Save as PDF)
+// and downloadable for Excel (?format=csv). Cost, stock value and profit are shown to managers only.
+function isManagerReq(req) {
+  return String(req.session.user?.role || '').toLowerCase() === 'manager';
+}
+// CSV that Excel opens correctly: UTF-8 with a BOM, every cell quoted, and cells that start with
+// = + - @ prefixed with ' so a product name can't run as a spreadsheet formula.
+function csvCell(value) {
+  let text = value === null || value === undefined ? '' : String(value);
+  if (/^[=+\-@\t\r]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+function sendCsv(res, filename, headers, rows) {
+  const body = [headers, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\w.-]/g, '_')}"`);
+  return res.send('﻿' + body + '\r\n');
+}
+app.get('/reports', pageAccess, (req, res) => res.redirect('/reports/sales'));
+
+app.get('/reports/inventory', pageAccess, async (req, res) => {
+  const lowOnly = req.query.low === '1';
+  const manager = isManagerReq(req);
+  const fallback = { lowOnly, manager, rows: [], totals: null, threshold: 5, generated: localToday(), dataAvailable: false };
+  try {
+    const reply = await apiRequest('GET', '/report/inventory', { timeoutMs: 30000 });
+    let rows = arrayData(reply?.rows);
+    if (lowOnly) rows = rows.filter(r => r.status);
+    if (req.query.format === 'csv') {
+      const headers = ['Product', 'Category', 'Supplier', 'Size', 'Color', 'Location', 'In stock', 'Status', 'Available']
+        .concat(manager ? ['Cost', 'Price', 'Stock value at cost', 'Stock value at price'] : ['Price']);
+      return sendCsv(res, `inventory-report-${lowOnly ? 'low-stock-' : ''}${localToday()}.csv`, headers, rows.map(r =>
+        [r.product, r.category, r.supplier || '', r.size, r.color, r.location || '', r.quantity, r.status || 'OK', r.available ? 'Yes' : 'No']
+          .concat(manager ? [r.cost.toFixed(2), r.price.toFixed(2), r.value_cost.toFixed(2), r.value_retail.toFixed(2)] : [Number(r.price).toFixed(2)])));
+    }
+    return page(req, res, 'report-inventory', {
+      ...fallback, rows, totals: reply?.totals || null,
+      threshold: Number(reply?.low_stock_threshold ?? 5), generated: reply?.generated || localToday(), dataAvailable: true
+    });
+  } catch (err) {
+    return page(req, res, 'report-inventory', { ...fallback, message: apiError(err, 'The inventory report is unavailable.') });
+  }
+});
+
+// Date range shortcuts for the sales report. Dates are in this computer's time zone, like invoice dates.
+function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function salesRanges() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const daysAgo = n => { const d = new Date(now); d.setDate(d.getDate() - n); return d; };
+  return [
+    { key: 'this-month', label: 'This month', from: isoDate(new Date(y, m, 1)), to: isoDate(now) },
+    { key: 'last-month', label: 'Last month', from: isoDate(new Date(y, m - 1, 1)), to: isoDate(new Date(y, m, 0)) },
+    { key: 'last-30', label: 'Last 30 days', from: isoDate(daysAgo(29)), to: isoDate(now) },
+    { key: 'this-year', label: 'This year', from: isoDate(new Date(y, 0, 1)), to: isoDate(now) }
+  ];
+}
+app.get('/reports/sales', pageAccess, async (req, res) => {
+  const ranges = salesRanges();
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(v));
+  const preset = ranges.find(r => r.key === req.query.range);
+  let from = preset ? preset.from : (validDate(req.query.from) ? String(req.query.from) : ranges[0].from);
+  let to = preset ? preset.to : (validDate(req.query.to) ? String(req.query.to) : ranges[0].to);
+  if (from > to) [from, to] = [to, from];
+  const rangeKey = (ranges.find(r => r.from === from && r.to === to) || {}).key || 'custom';
+  const manager = isManagerReq(req);
+  const fallback = { from, to, rangeKey, ranges, manager, summary: null, byProduct: [], byCategory: [], byDay: [], sales: [], generated: localToday(), dataAvailable: false };
+  try {
+    const reply = await apiRequest('GET', '/report/sales', { query: { from, to }, timeoutMs: 30000 });
+    if (req.query.format === 'csv') {
+      const headers = ['Date', 'Order #', 'Product', 'Category', 'Size', 'Color', 'Units', 'Price', 'Sales']
+        .concat(manager ? ['Cost', 'Profit'] : []).concat(['Recorded by']);
+      return sendCsv(res, `sales-report-${from}-to-${to}.csv`, headers, arrayData(reply?.sales).map(r =>
+        [r.date, r.invoice_id, r.product, r.category, r.size, r.color, r.units, Number(r.price).toFixed(2), Number(r.revenue).toFixed(2)]
+          .concat(manager ? [Number(r.cost_total).toFixed(2), Number(r.profit).toFixed(2)] : []).concat([r.employee])));
+    }
+    return page(req, res, 'report-sales', {
+      ...fallback, summary: reply?.summary || null,
+      byProduct: arrayData(reply?.by_product), byCategory: arrayData(reply?.by_category), byDay: arrayData(reply?.by_day),
+      sales: arrayData(reply?.sales), generated: reply?.generated || localToday(), dataAvailable: true
+    });
+  } catch (err) {
+    return page(req, res, 'report-sales', { ...fallback, message: apiError(err, 'The sales report is unavailable.') });
   }
 });
 

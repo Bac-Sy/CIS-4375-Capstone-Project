@@ -128,6 +128,123 @@ def register_reporting_routes(app, connect, read_query):
                 row['date'] = str(row['date'])[:10]
         return jsonify({'rows': rows, 'types': types, 'limit': limit})
 
+    # ---------- REPORTS (R-10): inventory report and sales report ----------
+    # Read-only. Sales are valued at each item's current price and cost (the database doesn't
+    # keep the price at the time of the sale), the same as the Dashboard and Best sellers.
+
+    @app.get('/report/inventory')
+    def inventory_report():
+        rows = fetch('''
+            SELECT p.Product_ID AS product_id, p.Name AS product, c.Category AS category,
+                   sup.Name AS supplier, p.Availability AS available,
+                   v.Variant_ID AS variant_id, s.Size AS size, co.Color AS color,
+                   l.Location_Name AS location, i.Quantity AS quantity,
+                   v.Cost AS cost, v.Price AS price
+            FROM Inventory i
+            JOIN Product_Variant v ON v.Variant_ID = i.Variant_ID
+            JOIN Product p ON p.Product_ID = v.Product_ID
+            JOIN Category c ON c.Category_ID = p.Category_ID
+            JOIN Size s ON s.Size_ID = v.Size_ID
+            JOIN Color co ON co.Color_ID = v.Color_ID
+            LEFT JOIN Location l ON l.Location_ID = CAST(v.Location_ID AS UNSIGNED)
+            LEFT JOIN Supplier sup ON sup.Supplier_ID = p.Supplier_ID
+            ORDER BY p.Name, s.Size, co.Color, v.Variant_ID
+        ''')
+        limit = threshold()
+        totals = {'items': 0, 'units': 0, 'value_cost': 0.0, 'value_retail': 0.0, 'low': 0, 'out': 0}
+        products = set()
+        for row in rows:
+            quantity = int(row['quantity'] or 0)
+            cost = float(row['cost'] or 0)
+            price = float(row['price'] or 0)
+            row.update(quantity=quantity, cost=cost, price=price,
+                       available=bool(int(row['available'] if row['available'] is not None else 1)),
+                       value_cost=round(quantity * cost, 2), value_retail=round(quantity * price, 2),
+                       status='Out' if quantity == 0 else ('Low' if quantity <= limit else ''))
+            totals['items'] += 1
+            totals['units'] += quantity
+            totals['value_cost'] += row['value_cost']
+            totals['value_retail'] += row['value_retail']
+            totals['low'] += 1 if row['status'] == 'Low' else 0
+            totals['out'] += 1 if row['status'] == 'Out' else 0
+            products.add(row['product_id'])
+        totals['products'] = len(products)
+        totals['value_cost'] = round(totals['value_cost'], 2)
+        totals['value_retail'] = round(totals['value_retail'], 2)
+        return jsonify({'rows': rows, 'totals': totals, 'low_stock_threshold': limit,
+                        'generated': date.today().isoformat()})
+
+    @app.get('/report/sales')
+    def sales_report():
+        try:
+            start = date.fromisoformat(str(request.args.get('from', '')))
+            end = date.fromisoformat(str(request.args.get('to', '')))
+        except ValueError:
+            return jsonify({'message': 'from and to must be dates (YYYY-MM-DD).'}), 400
+        if start > end:
+            return jsonify({'message': 'The start date must be on or before the end date.'}), 400
+        if (end - start).days > 3660:
+            return jsonify({'message': 'Choose a range of 10 years or less.'}), 400
+        sales = fetch('''
+            SELECT i.Invoice_ID AS invoice_id, i.Date AS date,
+                   p.Product_ID AS product_id, p.Name AS product, c.Category AS category,
+                   s.Size AS size, co.Color AS color,
+                   -i.Quantity_Change AS units, v.Price AS price, v.Cost AS cost,
+                   CONCAT(e.First_Name, ' ', e.Last_Name) AS employee
+            FROM Invoice i
+            JOIN Transaction_Type t ON t.Transaction_Type_ID = i.Transaction_Type_ID
+            JOIN Product_Variant v ON v.Variant_ID = i.Variant_ID
+            JOIN Product p ON p.Product_ID = v.Product_ID
+            JOIN Category c ON c.Category_ID = p.Category_ID
+            JOIN Size s ON s.Size_ID = v.Size_ID
+            JOIN Color co ON co.Color_ID = v.Color_ID
+            JOIN Employee e ON e.Employee_ID = i.Employee_ID
+            WHERE t.Transaction_Type = 'Sale' AND i.Quantity_Change < 0
+              AND i.Date >= %s AND i.Date <= %s
+            ORDER BY i.Date DESC, i.Invoice_ID DESC
+        ''', (start, end))
+        by_product, by_category, by_day = {}, {}, {}
+        summary = {'revenue': 0.0, 'units': 0, 'sales': len(sales), 'cost': 0.0}
+        for row in sales:
+            units = int(row['units'] or 0)
+            price = float(row['price'] or 0)
+            cost = float(row['cost'] or 0)
+            day = str(row['date'])[:10]
+            revenue, cost_total = round(units * price, 2), round(units * cost, 2)
+            row.update(date=day, units=units, price=price, cost=cost, revenue=revenue,
+                       cost_total=cost_total, profit=round(revenue - cost_total, 2))
+            summary['revenue'] += revenue
+            summary['units'] += units
+            summary['cost'] += cost_total
+            for table, key, base in ((by_product, row['product_id'], {'product': row['product'], 'category': row['category']}),
+                                     (by_category, row['category'], {'category': row['category']}),
+                                     (by_day, day, {'date': day})):
+                entry = table.setdefault(key, dict(base, sales=0, units=0, revenue=0.0, cost=0.0))
+                entry['sales'] += 1
+                entry['units'] += units
+                entry['revenue'] += revenue
+                entry['cost'] += cost_total
+        def finish(entries):
+            out = []
+            for entry in entries:
+                entry['revenue'] = round(entry['revenue'], 2)
+                entry['cost'] = round(entry['cost'], 2)
+                entry['profit'] = round(entry['revenue'] - entry['cost'], 2)
+                out.append(entry)
+            return out
+        summary['revenue'] = round(summary['revenue'], 2)
+        summary['cost'] = round(summary['cost'], 2)
+        summary['profit'] = round(summary['revenue'] - summary['cost'], 2)
+        summary['average_sale'] = round(summary['revenue'] / summary['sales'], 2) if summary['sales'] else 0
+        summary['margin'] = round(summary['profit'] / summary['revenue'] * 100, 1) if summary['revenue'] else 0
+        return jsonify({
+            'from': start.isoformat(), 'to': end.isoformat(), 'summary': summary,
+            'by_product': finish(sorted(by_product.values(), key=lambda e: (-e['revenue'], e['product']))),
+            'by_category': finish(sorted(by_category.values(), key=lambda e: (-e['revenue'], e['category']))),
+            'by_day': finish(sorted(by_day.values(), key=lambda e: e['date'])),
+            'sales': sales, 'generated': date.today().isoformat()
+        })
+
     @app.get('/employees')
     def employees_summary():
         rows = fetch('''
