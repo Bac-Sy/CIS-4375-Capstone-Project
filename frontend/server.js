@@ -37,6 +37,7 @@ app.disable('x-powered-by');
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 if (env === 'production') app.set('trust proxy', 1);
+const SECURE_COOKIES = /^(1|true|yes)$/i.test(process.env.COOKIE_SECURE || ''); // only true when the site runs on https
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'same-origin');
@@ -60,7 +61,7 @@ app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: 'lax', secure: env === 'production', maxAge: 8 * 60 * 60 * 1000 }
+  cookie: { httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES, maxAge: 8 * 60 * 60 * 1000 }
 }));
 
 const requestContext = new AsyncLocalStorage();
@@ -377,7 +378,7 @@ app.post('/process/login', login);
 function logout(req, res, next) {
   req.session.destroy(err => {
     if (err) return next(err);
-    res.clearCookie('scc.sid', { path: '/', httpOnly: true, sameSite: 'lax', secure: env === 'production' });
+    res.clearCookie('scc.sid', { path: '/', httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES });
     res.redirect(303, '/login');
   });
 }
