@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<%- include('../template/head', { title: 'Edit employee' }); %>
+</head>
+
+<body>
+<div class="app">
+<%- include('../template/nav', { active: 'employees' }); %>
+
+<main class="content">
+<%- include('../template/topbar'); %>
+
+<header class="page-header">
+<h1>Edit employee</h1>
+</header>
+
+<section class="panel form-panel">
+
+<%- include('../template/messages'); %>
+
+<!-- Edit employee information -->
+<form action="/employees/<%= employee.id %>/edit" method="POST">
+
+<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+<div class="mb-3">
+<label for="First_Name" class="form-label">First name</label>
+<input type="text" class="form-control"
+       id="First_Name" name="First_Name"
+       maxlength="50" required
+       value="<%= employee.First_Name %>">
+</div>
+
+<div class="mb-3">
+<label for="Last_Name" class="form-label">Last name</label>
+<input type="text" class="form-control"
+       id="Last_Name" name="Last_Name"
+       maxlength="50" required
+       value="<%= employee.Last_Name %>">
+</div>
+
+<div class="mb-3">
+<label for="Role" class="form-label">Role</label>
+<select class="form-select" id="Role" name="Role" required>
+
+<option value="Employee"
+  <%= employee.Role === 'Employee' ? 'selected' : '' %>>
+  Employee
+</option>
+
+<option value="Manager"
+  <%= employee.Role === 'Manager' ? 'selected' : '' %>>
+  Manager
+</option>
+
+</select>
+</div>
+
+<div class="mb-3">
+<label for="Username" class="form-label">Username</label>
+<input type="text" class="form-control"
+       id="Username" name="Username"
+       maxlength="50" autocomplete="off" required
+       value="<%= employee.Username %>">
+</div>
+
+<div class="mb-3">
+<label for="Email" class="form-label">Email</label>
+<input type="email" class="form-control"
+       id="Email" name="Email"
+       maxlength="100" autocomplete="off" required
+       value="<%= employee.Email %>">
+</div>
+
+<button type="submit" class="btn btn-primary">Save changes</button>
+<a href="/employees" class="btn btn-outline-secondary">Cancel</a>
+
+</form>
+</section>
+
+<%- include('../template/footer'); %>
+</main>
+</div>
+
+<%- include('../template/scripts'); %>
+</body>
+</html>

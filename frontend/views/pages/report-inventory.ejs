@@ -1,0 +1,108 @@
+<%
+  const showLow = typeof lowOnly !== 'undefined' && lowOnly;
+  const isMgr = typeof manager !== 'undefined' && manager;
+  const t = typeof totals !== 'undefined' && totals ? totals : null;
+  const shownUnits = rows.reduce((n, r) => n + (Number(r.quantity) || 0), 0);
+  const generatedOn = fmt.date(typeof generated !== 'undefined' ? generated : '');
+  const cols = isMgr ? 11 : 9;
+%>
+<!doctype html>
+<html lang="en">
+<head>
+  <%- include('../template/head', { title: 'Inventory report' }) %>
+</head>
+<body>
+<div class="app">
+  <%- include('../template/nav', { active: 'reports' }) %>
+  <main class="content">
+    <%- include('../template/topbar') %>
+    <%- include('../template/messages') %>
+
+    <%- include('../template/reportbar', { reportKey: 'inventory', reportTitle: showLow ? 'Inventory report: low stock' : 'Inventory report',
+         reportSubtitle: 'Stock on hand as of ' + generatedOn, exportHref: '/reports/inventory' + (showLow ? '?low=1' : '') }) %>
+
+    <!-- Filters for this report (the tabs above switch reports) -->
+    <section class="filter-bar no-print" aria-label="Filter this report">
+      <div class="filter-group">
+        <span class="filter-label">Show</span>
+        <nav class="pills" aria-label="Which items">
+          <a href="/reports/inventory" class="<%= showLow ? '' : 'active' %>"<% if (!showLow) { %> aria-current="page"<% } %>>All items</a>
+          <a href="/reports/inventory?low=1" class="<%= showLow ? 'active' : '' %>"<% if (showLow) { %> aria-current="page"<% } %>>Low and out of stock (reorder list)</a>
+        </nav>
+      </div>
+    </section>
+
+    <% if (t) { %>
+    <% if (showLow) { %><p class="empty" style="margin:-0.4rem 0 0.6rem">Totals below are for all stock; the table lists only low and out of stock items.</p><% } %>
+    <section class="stat-row" aria-label="Totals">
+      <div class="stat"><span class="stat-label">Units in stock</span><strong><%= fmt.number(t.units) %></strong><span class="stat-sub"><%= fmt.number(t.products) %> <%= t.products === 1 ? 'product' : 'products' %>, in <%= fmt.number(t.items) %> <%= t.items === 1 ? 'size and color' : 'sizes and colors' %></span></div>
+      <% if (isMgr) { %>
+        <div class="stat"><span class="stat-label">Stock value at cost</span><strong><%= fmt.money(t.value_cost) %></strong><span class="stat-sub">in stock × cost: what it cost the store</span></div>
+        <div class="stat"><span class="stat-label">Stock value at price</span><strong><%= fmt.money(t.value_retail) %></strong><span class="stat-sub">in stock × price: if it all sold</span></div>
+      <% } %>
+      <div class="stat"><span class="stat-label">Low / out of stock</span><strong><%= fmt.number(t.low) %> / <%= fmt.number(t.out) %></strong><span class="stat-sub"><%= threshold %> or fewer is low</span></div>
+    </section>
+    <% } %>
+
+    <section class="panel">
+      <div class="panel-bar"><%= rows.length %> <%= rows.length === 1 ? 'item' : 'items' %>, <%= fmt.number(shownUnits) %> units<%= showLow ? ' · items at or below ' + threshold + ', with their supplier for reordering' : '' %></div>
+      <div class="table-scroll">
+        <table class="data-table report-table">
+          <caption class="visually-hidden">Inventory report</caption>
+          <thead>
+            <tr>
+              <th scope="col">Product</th>
+              <th scope="col">Size / color</th>
+              <th scope="col">Category</th>
+              <th scope="col">Supplier</th>
+              <th scope="col">Location</th>
+              <th scope="col" class="num">In stock</th>
+              <th scope="col">Status</th>
+              <% if (isMgr) { %><th scope="col" class="num">Cost</th><% } %>
+              <th scope="col" class="num">Price</th>
+              <% if (isMgr) { %><th scope="col" class="num">Value at cost</th><th scope="col" class="num">Value at price</th><% } else { %><th scope="col">Available</th><% } %>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (!dataAvailable) { %>
+              <tr><td colspan="<%= cols %>" class="empty-cell">The report is unavailable. Check the message above.</td></tr>
+            <% } else if (!rows.length) { %>
+              <tr><td colspan="<%= cols %>" class="empty-cell"><%= showLow ? 'Nothing is low or out of stock.' : 'No inventory yet.' %></td></tr>
+            <% } %>
+            <% rows.forEach(function(r) { %>
+              <tr>
+                <td><strong><%= r.product %></strong><% if (!r.available) { %> <span class="tag tag-outline">Not available</span><% } %></td>
+                <td><%= r.size %> / <%= r.color %></td>
+                <td><%= r.category %></td>
+                <td><%= r.supplier || '—' %></td>
+                <td><%= r.location || 'Unassigned' %></td>
+                <td class="num"><strong><%= fmt.number(r.quantity) %></strong></td>
+                <td><% if (r.status) { %><span class="tag tag-red"><%= r.status %></span><% } else { %>OK<% } %></td>
+                <% if (isMgr) { %><td class="num"><%= fmt.money(r.cost) %></td><% } %>
+                <td class="num"><%= fmt.money(r.price) %></td>
+                <% if (isMgr) { %><td class="num"><%= fmt.money(r.value_cost) %></td><td class="num"><%= fmt.money(r.value_retail) %></td><% } else { %><td><%= r.available ? 'Yes' : 'No' %></td><% } %>
+              </tr>
+            <% }); %>
+          </tbody>
+          <% if (isMgr && rows.length) { %>
+          <tfoot>
+            <tr>
+              <th scope="row" colspan="5">Total</th>
+              <td class="num"><strong><%= fmt.number(shownUnits) %></strong></td>
+              <td colspan="3"></td>
+              <td class="num"><strong><%= fmt.money(rows.reduce((n, r) => n + r.value_cost, 0)) %></strong></td>
+              <td class="num"><strong><%= fmt.money(rows.reduce((n, r) => n + r.value_retail, 0)) %></strong></td>
+            </tr>
+          </tfoot>
+          <% } %>
+        </table>
+      </div>
+    </section>
+    <p class="empty report-note">One row per item (size / color). Value at cost = in stock × cost; value at price = in stock × price, using each item's current cost and price.<% if (!isMgr) { %> Cost and stock value are shown to managers only.<% } %></p>
+
+    <%- include('../template/footer') %>
+  </main>
+</div>
+<%- include('../template/scripts') %>
+</body>
+</html>
