@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <%- include('../template/head', { title: 'Employees' }); %>
+    </head>
+
+    <body>
+        <div class="app">
+            <%- include('../template/nav', { active: 'employees' }); %>
+
+            <main class="content">
+                <%- include('../template/topbar'); %>
+                <%- include('../template/messages'); %>
+
+                <header class="page-header page-header-row">
+                  <h1>Employees</h1>
+                  <% if (Role === 'Manager') { %>
+                    <a href="/new/employee" class="scc-btn">+ Add employee</a>
+                  <% } %>
+                </header>
+
+                <section class="panel">
+                  <div class="panel-bar"><%= fmt.number(employees.length) %> <%= employees.length === 1 ? 'employee' : 'employees' %></div>
+                  <div class="table-scroll">
+                    <table class="data-table">
+                      <caption class="visually-hidden">Employees</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Name</th>
+                          <th scope="col">Username</th>
+                          <th scope="col">Email</th>
+                          <th scope="col">Role</th>
+                          <th scope="col" class="menu-cell"><span class="visually-hidden">Actions</span></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <% if (!dataAvailable) { %>
+                          <tr><td colspan="5" class="empty-cell">Employee data is unavailable. Check the message above and the Flask database mapping.</td></tr>
+                        <% } else if (!employees.length) { %>
+                          <tr><td colspan="5" class="empty-cell">No employee records in the connected data source.</td></tr>
+                        <% } %>
+                        <% employees.forEach(e => { %>
+                          <tr>
+                            <% const fullName = [e.first_name, e.last_name].filter(Boolean).join(' ') || e.name || e.username || 'N/A';
+                               const isMe = user && user.id != null && String(user.id) === String(e.id); %>
+                            <td><strong><%= fullName %></strong><% if (isMe) { %> <span class="you">(you)</span><% } %></td>
+                            <td><%= e.username %></td>
+                            <td><%= e.email || 'N/A' %></td>
+                            <td><span class="tag tag-soft"><%= e.role || 'N/A' %></span></td>
+                            <td class="menu-cell">
+                              <%- include('../template/rowmenu', { menuLabel: 'Actions for ' + fullName, menuItems: (Role === 'Manager' && e.id != null) ? [
+                                { label: 'Edit employee', href: '/employees/' + e.id + '/edit', icon: 'edit' },
+                                { label: 'Reset password', href: '/employees/' + e.id + '/reset-password', icon: 'key' },
+                                !isMe && { label: 'Delete employee', action: '/employees/' + e.id + '/delete', icon: 'delete', danger: true,
+                                  confirm: 'Delete ' + fullName + '? They will no longer be able to log in. This can’t be undone.', confirmButton: 'Delete employee' }
+                              ] : [] }) %>
+                            </td>
+                          </tr>
+                        <% }) %>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <%- include('../template/footer'); %>
+            </main>
+        </div>
+                <%- include('../template/scripts'); %>
+        <%- include('../template/confirm'); %>
+    </body>
+</html>
