@@ -117,10 +117,15 @@ app.use(async (req, res, next) => {
         throw new Error('Employee session no longer valid');
       }
       req.session.user = verified;
-    } catch (_) {
-      delete req.session.user;
-      delete req.session.apiToken;
-      delete req.session.authMode;
+    } catch (err) {
+      // Only log out when the login is really invalid (Flask said 401, or the token/user is missing or wrong).
+      // If Flask is just slow or down (timeout, 503), keep the user logged in; the page shows its "unavailable" message.
+      const loginInvalid = !(err instanceof ApiError) || err.status === 401;
+      if (loginInvalid) {
+        delete req.session.user;
+        delete req.session.apiToken;
+        delete req.session.authMode;
+      }
     }
   }
   const user = req.session.user || guestUser;
