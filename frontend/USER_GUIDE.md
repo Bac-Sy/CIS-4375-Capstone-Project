@@ -1,35 +1,36 @@
 # Space City Couture — User Guide
 
+**Handoff Date**: November 16th, 2026
+The information within this file is also located in the document provided with your software. *For further assistance*, please reach out to Modunet within the appropriate hand-off period. 
+
+# Available Pages
+- Dashboard
+- Inventory
+- Orders
+- Products
+- Employees
+- Settings
+
 ## 1. Logging In
-Explain how to open the website, enter a username and
-password, and log out.
+In order to log into your system, you will open the website provided by *Modunet*, and a local version of your software will load within your browser. Type in your assigned username and password into the corresponding fields. A successful log-in will take you to the dashboard. To log-out, please go the *Settings* page. Confirm you have logged out prior to leaving the browser page. 
 
 ## 2. Viewing the Dashboard
-Explain what the dashboard displays.
+Once you sign-in, you are able to view sales analytics such as units sold and note trends within your inventory. 
 
 ## 3. Checking Inventory
-Explain how to find a product and view its quantity.
+To check your inventory, please select the 'inventory' tab within your navigation menu. Find the product you are looking for by browsing the table. The table currently shows the name of the product, the size, the color, its location, and the quantity.
 
 ## 4. Adjusting Inventory
-Explain how to enter a corrected stock quantity
-and select Save.
+To adjust your inventory, locate the product you wish to update. Within that card, you may fix sizes, colors, and quantity. Once you make the adjustment, please click *Save Changes* to confirm. If you adding a new variant to an existing item, you will click *Add X variants.*
 
-## 5. Recording a Sale or Restock
-Explain how to open Orders, select Record Transaction,
-choose a product variant, select Sale or Restock,
-enter a quantity, and submit.
+## 5. Managing Products
+To manage products, you may create a product from the inventory page. You may adjust the name of the product, its location, available sizes, and colors. Additionally, you can also delete existing products by going into an item card and clicking *Delete Variant*, which will delete the size and color you created. 
 
-## 6. Managing Products
-Explain Manage Catalogue, Add Product,
-Edit Product, and Add Size / Color.
+## 6. Adding an Employee (MANAGER)
+To add an employee, you will click *Add Employee*. Within that menu, you will complete the first name, last name, their role, username, email, and password. The initial password must be provided to the employee through a secure channel. Open the *employee* page to confirm that the employee was successfully created.
 
-## 7. Adding an Employee
-Explain how a Manager opens Add Employee,
-fills out the fields, and creates the account.
+## 7. Reviewing Orders
+On the *Orders* page, you are able to view orders made and open up each order page that contains the following information: the transaction type, the date it was created, the product information (including the item, size, color, and quantity), and who it was recorded by. If a mistake is created on the order, you may go back in to edit, or delete the order entirely. Please ensure you hit *Save Changes* to save the order. 
 
-## 8. Reviewing Orders
-Explain how to view transaction history,
-correct an order, and delete an order if permitted.
-
-## 9. Permissions
-Explain which features are limited to Managers.
+## 8. Settings
+Within the *Settings* page, you are able to look at information regarding the current account logged in, including your full name, your username, email address associated with the account, and your role. Only managers are allowed to make edits to employees. Additionally, on this page, you are able to change your password, or sign out. **MANAGERS** are able to adjust the stock threshold as well regarding when an item will receive a low-stock flag on their product card.
