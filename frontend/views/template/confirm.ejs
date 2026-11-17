@@ -27,6 +27,8 @@
         //stop the form from sending and show the popup instead
         document.querySelectorAll('form[data-confirm]').forEach((form) => {
             form.addEventListener('submit', (event) => {
+                // the page's own check already stopped the form (e.g. a missing price): don't ask
+                if (event.defaultPrevented) return;
                 event.preventDefault();
                 pendingForm = form;
                 message.textContent = form.dataset.confirm;

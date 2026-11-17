@@ -95,6 +95,19 @@
       e.preventDefault();
       (price.value ? cost : price).focus();
       countText.textContent = 'Enter the price and cost to use for all variants, or untick "Same price and cost".';
+      return;
     }
+    // The confirm popup (template/confirm.ejs) shows this, listing exactly what will be added.
+    var names = [], units = 0;
+    form.querySelectorAll('.combo-check:checked').forEach(function (box) {
+      var row = box.closest('.combo-row');
+      var label = row.querySelector('input[name^="label_"]');
+      var stock = Number((row.querySelector('input.stock') || {}).value) || 0;
+      units += stock;
+      names.push((label ? label.value : box.value) + ' (' + stock + ' in stock)');
+    });
+    form.dataset.confirm = 'Add ' + (checked === 1 ? '1 variant' : checked + ' variants') + ' to ' + form.dataset.product + ': ' +
+      names.join(', ') + '?' + (units ? ' The starting stock (' + units + ' in total) is recorded as a restock.' : '');
+    form.dataset.confirmButton = checked === 1 ? 'Add 1 variant' : 'Add ' + checked + ' variants';
   });
 })();

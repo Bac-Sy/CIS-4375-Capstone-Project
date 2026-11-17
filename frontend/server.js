@@ -1854,8 +1854,11 @@ app.post('/products/:id/variants', managerOnly, async (req, res) => {
   }
 
   markRecent(req, 'products', productId);
+  const productName = (arrayData(await apiGet('/api/products').catch(() => [])).find(p => String(p.Product_ID) === String(productId)) || {}).Name;
+  const units = planned.reduce((sum, item) => sum + item.stock, 0);
   return flashAndRedirect(req, res,
-    `Added ${added.length} ${added.length === 1 ? 'variant' : 'variants'}: ${added.join(', ')}.`,
+    `Success! Added ${added.length} ${added.length === 1 ? 'variant' : 'variants'}${productName ? ' to ' + productName : ''}: ${added.join(', ')}.` +
+      (units ? ` ${units} ${units === 1 ? 'unit' : 'units'} of starting stock recorded as a restock.` : ''),
     `/inventory#p${productId}`);
 });
 

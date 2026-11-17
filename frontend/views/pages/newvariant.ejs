@@ -25,7 +25,8 @@
       <p class="page-sub">Product: <strong><%= product.Name %></strong>. Pick sizes and colors, then check the combinations you have and fill in each one.</p>
     </header>
 
-    <form action="/products/<%= product.Product_ID %>/variants" method="POST" id="variantForm">
+    <form action="/products/<%= product.Product_ID %>/variants" method="POST" id="variantForm"
+      data-confirm="Add these variants to <%= product.Name %>?" data-confirm-button="Add variants" data-product="<%= product.Name %>">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="variant-layout">
 
@@ -143,6 +144,7 @@
   </main>
 </div>
 <%- include('../template/scripts') %>
-<script src="/js/add-variants.js?v=4"></script>
+<script src="/js/add-variants.js?v=5"></script>
+<%- include('../template/confirm') %>
 </body>
 </html>
