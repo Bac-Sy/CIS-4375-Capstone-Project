@@ -930,7 +930,8 @@ app.get('/reports/sales', pageAccess, async (req, res) => {
       sales: arrayData(reply?.sales), generated: reply?.generated || localToday(), dataAvailable: true
     };
     if (productId) {
-      const products = await apiGet('/api/products').catch(() => []);
+      // include_removed: a product taken out of the inventory still has its sales
+      const products = await apiGet('/api/products', { include_removed: 1 }).catch(() => []);
       values.productName = (arrayData(products).find(p => String(p.Product_ID) === productId) || {}).Name || 'this product';
     }
     const name = `sales-report-${from}-to-${to}${productId ? '-product-' + productId : ''}`;
@@ -1808,6 +1809,21 @@ app.post('/products/:id/variants', managerOnly, async (req, res) => {
       `Nothing was added: ${duplicates.map(d => d.label).join(', ')} already ${duplicates.length === 1 ? 'exists' : 'exist'}.`, back);
   }
 
+  // Starting stock is new stock from the product's supplier, so it's recorded as a Restock (shown on Orders as
+  // "Restock from <supplier>"), not as an Adjustment. Adjustments are for corrections made on Inventory.
+  let restockTypeId = null;
+  if (planned.some(item => item.stock > 0)) {
+    try {
+      const restock = arrayData(await apiGet('/show/all/transaction/types')).find(t => t.Transaction_Type === 'Restock');
+      restockTypeId = restock ? Number(restock.Transaction_Type_ID) : null;
+    } catch (err) {
+      return flashAndRedirect(req, res, apiError(err, 'Nothing was added: the transaction types could not be loaded.'), back);
+    }
+    if (!validId(restockTypeId)) {
+      return flashAndRedirect(req, res, 'Nothing was added: the Restock transaction type is missing.', back);
+    }
+  }
+
   const added = [];
   for (const item of planned) {
     let variantId = null;
@@ -1824,7 +1840,7 @@ app.post('/products/:id/variants', managerOnly, async (req, res) => {
       if (!validId(variantId)) throw new ApiError('Variant creation returned no valid ID.', 502, null);
       await apiPost('/api/inventory', { Variant_ID: variantId, Quantity: 0 });
       if (item.stock > 0) {
-        await apiPut('/adjust/inventory', { Variant_ID: variantId, New_Quantity: item.stock });
+        await apiPost('/create/invoice', { Transaction_Type_ID: restockTypeId, Quantity_Change: item.stock, Variant_ID: variantId });
       }
       added.push(item.label);
       markRecent(req, 'variants', variantId);
@@ -1993,9 +2009,11 @@ for (const config of editPages) {
 
   app.post(`/${config.kind}/:id/delete`, managerOnly, async (req, res) => {
     try {
-      await apiDelete(`${config.put}/${encodeURIComponent(req.params.id)}`);
-      // Variants are managed on Inventory now; everything else is on Manage catalog.
-      return flashAndRedirect(req, res, `${label} deleted.`, config.kind === 'variants' ? '/inventory' : '/manage');
+      const result = await apiDelete(`${config.put}/${encodeURIComponent(req.params.id)}`);
+      // Products and variants with orders are only taken out of the inventory (their orders stay); the API says which.
+      const message = (config.kind === 'products' || config.kind === 'variants') && result?.message ? result.message : `${label} deleted.`;
+      // Products and variants are managed on Inventory now; everything else is on Manage catalog.
+      return flashAndRedirect(req, res, message, config.kind === 'variants' || config.kind === 'products' ? '/inventory' : '/manage');
     } catch (err) {
       const destination = config.kind === 'products' || config.kind === 'variants'
         ? `/${config.kind}/${encodeURIComponent(req.params.id)}/edit` : '/manage';

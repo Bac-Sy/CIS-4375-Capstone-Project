@@ -241,11 +241,17 @@ def register_history(app, connect, read_query, read_settings):
                 target = describe(kind, row, key) if row else (getattr(g, 'history_target', None) or str(key))
             if kind == 'Stock':
                 action = 'Adjusted'
+            # a product or variant with orders is only taken out of the inventory; its orders are kept
+            kept_orders = int((response_json or {}).get('kept_orders') or 0) if request.method == 'DELETE' else 0
+            if kept_orders:
+                action = 'Removed'
             if request.path == '/change/password':
                 action = 'Changed own password'   # target is already the employee's name
             changes = changes_between(before, after)
             if kind == 'Employee' and (body.get('Password') or request.path == '/change/password'):
                 changes.append({'field': 'Password', 'from': '', 'to': '(changed)'})
+            if kept_orders:
+                changes.append({'field': 'Orders kept in the order history', 'from': '', 'to': str(kept_orders)})
             if request.method == 'PUT' and not changes:
                 return response               # saved without changing anything: nothing to record
             employee = g.employee

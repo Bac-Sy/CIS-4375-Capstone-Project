@@ -495,7 +495,7 @@ def createInvoice():
         stock = cursor.fetchone()
         if stock is None:
             mycon.rollback()
-            return jsonify({'message': 'No inventory record for that variant'}), 404
+            return jsonify({'message': 'That item was removed from the inventory, so it can\'t be sold or restocked.'}), 404
         #below here checks to make sure that the current stock plus the quantity change from the user is >= 0.
         currentStock = int(stock['Quantity'])
         if currentStock + quantityChange < 0:
@@ -567,15 +567,21 @@ def updateInvoice():
         #locks the stock rows involved so two edits can't change them at the same time
         cursor.execute('SELECT Variant_ID, Quantity FROM Inventory WHERE Variant_ID IN (%s, %s) FOR UPDATE', (oldVariantID, variantID))
         stock = {int(row['Variant_ID']): int(row['Quantity']) for row in cursor.fetchall()}
+        #an order whose item was removed from the inventory has no stock to move: its type and date can still be
+        #corrected, but not its item or quantity
+        stockMoves = not (variantID == oldVariantID and newQuantity == oldQuantity)
         if variantID not in stock or oldVariantID not in stock:
-            mycon.rollback()
-            return jsonify({'message' : 'No inventory record for that variant.'}), 404
+            if stockMoves:
+                mycon.rollback()
+                return jsonify({'message' : 'That item was removed from the inventory, so the order\'s item and quantity can\'t be changed. Its type and date can.'}), 400
+            stock = {}
 
         #undo the old change on the old item, then apply the new change to the new item
         before = dict(stock)
-        stock[oldVariantID] -= oldQuantity
-        stock[variantID] += newQuantity
-        for checkedID in {oldVariantID, variantID}:
+        if stock:
+            stock[oldVariantID] -= oldQuantity
+            stock[variantID] += newQuantity
+        for checkedID in (set(stock) & {oldVariantID, variantID}):
             if stock[checkedID] < 0:
                 mycon.rollback()
                 cursor.execute('SELECT p.Name, s.Size, c.Color FROM Product_Variant v JOIN Product p ON p.Product_ID=v.Product_ID '
@@ -590,7 +596,7 @@ def updateInvoice():
         if newDate is not None:
             cursor.execute('UPDATE Invoice SET Date=%s WHERE Invoice_ID=%s', (newDate, invoiceID))
         cursor.execute('UPDATE Invoice SET Quantity_Change=%s, Variant_ID=%s WHERE Invoice_ID=%s', (newQuantity, variantID, invoiceID))
-        for changedID in {oldVariantID, variantID}:
+        for changedID in (set(stock) & {oldVariantID, variantID}):
             cursor.execute('UPDATE Inventory SET Quantity=%s WHERE Variant_ID=%s', (stock[changedID], changedID))
         mycon.commit()
         return jsonify({'message' : 'Order updated.'})
@@ -631,8 +637,10 @@ def deleteInvoice():
         cursor.execute("select Quantity from Inventory where Variant_ID = %s FOR UPDATE", (variantID,))
         stock = cursor.fetchone()
         if stock is None:
-            mycon.rollback()
-            return jsonify({'message' : 'No inventory record for that variant'}), 404
+            #the item was removed from the inventory, so there's no stock to undo: only the order is deleted
+            cursor.execute("delete from Invoice where Invoice_ID = %s", (invoiceID,))
+            mycon.commit()
+            return jsonify({'message' : 'Order deleted. Its item was already removed from the inventory, so no stock changed.'})
         currentStock = int(stock['Quantity'])
         if currentStock - oldQuantity < 0:
             mycon.rollback()
@@ -1068,10 +1076,21 @@ def check_product_links(mycon, data):
         return jsonify({"message": "That supplier doesn't exist."}), 404
     return None
 
+#A product or variant that was deleted but has orders is kept (the orders point to it), and only its Inventory row is
+#removed. "Removed from inventory" therefore means: a variant with no Inventory row, or a product that has variants but
+#none of them in the inventory. Removed ones are left out of these lists; ?include_removed=1 includes them (for names).
+REMOVED_PRODUCT_SQL = """(EXISTS (SELECT 1 FROM Product_Variant rv WHERE rv.Product_ID = p.Product_ID)
+    AND NOT EXISTS (SELECT 1 FROM Product_Variant rv JOIN Inventory ri ON ri.Variant_ID = rv.Variant_ID
+                    WHERE rv.Product_ID = p.Product_ID))"""
+
+def include_removed():
+    return str(request.args.get('include_removed', '')).lower() in ('1', 'true', 'yes')
+
 @app.route('/api/products', methods=['GET'])
 def get_products():
     mycon = get_connection()
-    products = execute_read_query(mycon, "SELECT * FROM Product", ())
+    sql = "SELECT * FROM Product" if include_removed() else "SELECT p.* FROM Product p WHERE NOT " + REMOVED_PRODUCT_SQL
+    products = execute_read_query(mycon, sql, ())
     mycon.close()
     return jsonify(products), 200
 
@@ -1108,19 +1127,57 @@ def update_product(product_id):
     mycon.close()
     return jsonify({"message": "Product updated!"}), 200
 
+def remove_variants(cursor, variant_ids):
+    """Takes these variants out of the inventory. A variant without orders is deleted completely; a variant with
+    orders keeps its Product_Variant row (the orders point to it) and only loses its Inventory row, so the order
+    history stays. Returns how many orders were kept."""
+    kept_orders = 0
+    for variant_id in variant_ids:
+        cursor.execute("SELECT COUNT(*) AS n FROM Invoice WHERE Variant_ID=%s", (variant_id,))
+        orders = int(cursor.fetchone()['n'])
+        cursor.execute("DELETE FROM Inventory WHERE Variant_ID=%s", (variant_id,))
+        if orders:
+            kept_orders += orders
+        else:
+            cursor.execute("DELETE FROM Product_Variant WHERE Variant_ID=%s", (variant_id,))
+    return kept_orders
+
+def orders_kept_message(name, kept_orders):
+    return ("%s was removed from the inventory. Its %d %s %s in the order history." %
+            (name, kept_orders, 'order' if kept_orders == 1 else 'orders', 'stays' if kept_orders == 1 else 'stay'))
+
 @app.route('/api/products/<int:product_id>', methods=['DELETE'])
 def delete_product(product_id):
+    #deletes the product and all its sizes/colors in one go. Their orders are never deleted: variants with orders
+    #are kept for the order history (see remove_variants), and so is the product itself if any of them had orders.
     mycon = get_connection()
-    #a product with variants can't be deleted because the variants reference its Product_ID
-    variants = execute_read_query(mycon, "SELECT Variant_ID FROM Product_Variant WHERE Product_ID=%s", (product_id,))
-    if variants:
+    if mycon is None:
+        return jsonify({'message': 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = mycon.cursor(dictionary=True)
+        cursor.execute("SELECT Name FROM Product WHERE Product_ID=%s FOR UPDATE", (product_id,))
+        product = cursor.fetchone()
+        if product is None:
+            mycon.rollback()
+            return jsonify({"message": "Product not found."}), 404
+        cursor.execute("SELECT Variant_ID FROM Product_Variant WHERE Product_ID=%s FOR UPDATE", (product_id,))
+        variant_ids = [row['Variant_ID'] for row in cursor.fetchall()]
+        kept_orders = remove_variants(cursor, variant_ids)
+        if not kept_orders:
+            cursor.execute("DELETE FROM Product WHERE Product_ID=%s", (product_id,))
+        mycon.commit()
+        if kept_orders:
+            return jsonify({"message": orders_kept_message(product['Name'], kept_orders), "kept_orders": kept_orders}), 200
+        return jsonify({"message": "%s was deleted." % product['Name'], "kept_orders": 0}), 200
+    except Exception:
+        mycon.rollback()
+        app.logger.exception('Product delete failed')
+        return jsonify({'message': 'The product could not be deleted. Nothing was changed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
         mycon.close()
-        return jsonify({"message": "This product has variants and can't be deleted."}), 409
-    error = run_write(mycon, "DELETE FROM Product WHERE Product_ID=%s", (product_id,))
-    if error:
-        return db_error_response(mycon, error)
-    mycon.close()
-    return jsonify({"message": "Product deleted!"}), 200
 
 
 # ==========================================
@@ -1130,7 +1187,10 @@ def delete_product(product_id):
 @app.route('/api/product_variants', methods=['GET'])
 def get_product_variants():
     mycon = get_connection()
-    variants = execute_read_query(mycon, "SELECT * FROM Product_Variant", ())
+    #variants removed from the inventory (no Inventory row, kept only for their orders) are left out unless asked for
+    sql = "SELECT * FROM Product_Variant" if include_removed() else \
+        "SELECT v.* FROM Product_Variant v WHERE EXISTS (SELECT 1 FROM Inventory i WHERE i.Variant_ID = v.Variant_ID)"
+    variants = execute_read_query(mycon, sql, ())
     mycon.close()
     return jsonify(variants), 200
 
@@ -1164,26 +1224,35 @@ def update_product_variant(variant_id):
 
 @app.route('/api/product_variants/<int:variant_id>', methods=['DELETE'])
 def delete_product_variant(variant_id):
+    #removes one size/color from the inventory. Its orders are never deleted: a variant with orders is kept for the
+    #order history and only its stock record is removed (see remove_variants); one without orders is deleted completely.
     mycon = get_connection()
-    #a variant with orders (invoices) or stock can't be deleted, so its history and stock are never lost.
-    #(in practice: a variant added by mistake with 0 starting stock and never sold or adjusted can be deleted.)
-    #every variant gets an Inventory row when it's created, so an empty one (0 in stock) is removed along with it.
-    invoices = execute_read_query(mycon, "SELECT Invoice_ID FROM Invoice WHERE Variant_ID=%s", (variant_id,))
-    if invoices:
+    if mycon is None:
+        return jsonify({'message': 'Database unavailable.'}), 503
+    cursor = None
+    try:
+        cursor = mycon.cursor(dictionary=True)
+        cursor.execute("SELECT p.Name, s.Size, c.Color FROM Product_Variant v JOIN Product p ON p.Product_ID=v.Product_ID "
+                       "JOIN Size s ON s.Size_ID=v.Size_ID JOIN Color c ON c.Color_ID=v.Color_ID WHERE v.Variant_ID=%s FOR UPDATE",
+                       (variant_id,))
+        variant = cursor.fetchone()
+        if variant is None:
+            mycon.rollback()
+            return jsonify({"message": "Product variant not found."}), 404
+        name = '%s – %s / %s' % (variant['Name'], variant['Size'], variant['Color'])
+        kept_orders = remove_variants(cursor, [variant_id])
+        mycon.commit()
+        if kept_orders:
+            return jsonify({"message": orders_kept_message(name, kept_orders), "kept_orders": kept_orders}), 200
+        return jsonify({"message": "%s was deleted." % name, "kept_orders": 0}), 200
+    except Exception:
+        mycon.rollback()
+        app.logger.exception('Variant delete failed')
+        return jsonify({'message': 'The variant could not be deleted. Nothing was changed.'}), 503
+    finally:
+        if cursor:
+            cursor.close()
         mycon.close()
-        return jsonify({"message": "This variant has orders, so it can't be deleted. It keeps the sales and stock history."}), 409
-    stock = execute_read_query(mycon, "SELECT COALESCE(SUM(Quantity), 0) AS units FROM Inventory WHERE Variant_ID=%s", (variant_id,))
-    if stock and int(stock[0]['units'] or 0) > 0:
-        mycon.close()
-        return jsonify({"message": "This variant still has %s in stock, so it can't be deleted." % int(stock[0]['units'])}), 409
-    error = run_write(mycon, "DELETE FROM Inventory WHERE Variant_ID=%s", (variant_id,))
-    if error:
-        return db_error_response(mycon, error)
-    error = run_write(mycon, "DELETE FROM Product_Variant WHERE Variant_ID=%s", (variant_id,))
-    if error:
-        return db_error_response(mycon, error)
-    mycon.close()
-    return jsonify({"message": "Product Variant deleted!"}), 200
 
 
 # ==========================================
@@ -1280,6 +1349,8 @@ def bestSellers():
         join Category c on c.Category_ID = p.Category_ID
         left join Product_Variant v on v.Product_ID = p.Product_ID
         left join (""" + salesPerVariant + """) sales on sales.Variant_ID = v.Variant_ID
+        where v.Variant_ID is null or sales.Variant_ID is not null
+           or exists (select 1 from Inventory inv where inv.Variant_ID = v.Variant_ID)
         group by p.Product_ID, p.Name, c.Category
         order by Units_Sold desc, Revenue desc, p.Name"""
     byProduct = execute_read_query(mycon, sql, params)
@@ -1293,6 +1364,7 @@ def bestSellers():
         join Size s on s.Size_ID = v.Size_ID
         join Color co on co.Color_ID = v.Color_ID
         left join (""" + salesPerVariant + """) sales on sales.Variant_ID = v.Variant_ID
+        where sales.Variant_ID is not null or exists (select 1 from Inventory inv where inv.Variant_ID = v.Variant_ID)
         order by Units_Sold desc, Revenue desc, p.Name, s.Size, co.Color"""
     byItem = execute_read_query(mycon, sql2, params)
     mycon.close()

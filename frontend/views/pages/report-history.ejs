@@ -70,7 +70,7 @@
                 <td class="history-when"><%= when(e.time) %></td>
                 <td><strong><%= e.employee %></strong></td>
                 <td>
-                  <span class="tag tag-<%= e.action === 'Deleted' ? 'red' : e.action === 'Added' ? 'restock' : 'soft' %>"><%= e.action %></span>
+                  <span class="tag tag-<%= e.action === 'Deleted' || e.action === 'Removed' ? 'red' : e.action === 'Added' ? 'restock' : 'soft' %>"><%= e.action %></span>
                   <span class="history-kind"><%= e.kind %></span>
                   <div class="history-target"><%= e.target %></div>
                 </td>

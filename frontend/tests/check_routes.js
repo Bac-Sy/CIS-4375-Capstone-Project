@@ -129,9 +129,9 @@ async function verifyProductFlow() {
     if (routePath === '/api/products' && opts.method === 'POST') return { ok: true, status: 201,
       text: async () => JSON.stringify({ message: 'Product added!', Product_ID: 9 }) };
     if (routePath === '/api/products/7' && opts.method === 'DELETE') return { ok: false, status: 409,
-      text: async () => JSON.stringify({ message: 'This product has variants and cannot be deleted.' }) };
+      text: async () => JSON.stringify({ message: 'The product could not be deleted. Nothing was changed.' }) };
     if (routePath === '/api/products/8' && opts.method === 'DELETE') return { ok: true, status: 200,
-      text: async () => JSON.stringify({ message: 'Product deleted!' }) };
+      text: async () => JSON.stringify({ message: 'Wrap Dress was removed from the inventory. Its 3 orders stay in the order history.', kept_orders: 3 }) };
     throw new Error(`Unexpected API mock: ${opts.method} ${routePath}`);
   };
   try {
@@ -187,14 +187,14 @@ async function verifyProductFlow() {
     await productDelete.handlers[1](deleteReq, deleteRes);
     assert.strictEqual(deleteRes.code, 303);
     assert.strictEqual(deleteRes.target, '/products/7/edit');
-    assert(deleteReq.session.flash.includes('variants'), 'Variant deletion conflict not displayed');
+    assert(deleteReq.session.flash.includes('could not be deleted'), 'Product delete failure not displayed');
 
     const deleteOkReq = { method: 'POST', params: { id: '8' }, session: { user: manager } };
     const deleteOkRes = { redirect(code, target) { this.code = code; this.target = target; } };
     await productDelete.handlers[1](deleteOkReq, deleteOkRes);
     assert.strictEqual(deleteOkRes.code, 303);
-    assert.strictEqual(deleteOkRes.target, '/manage');
-    assert(deleteOkReq.session.flash.includes('deleted'));
+    assert.strictEqual(deleteOkRes.target, '/inventory');
+    assert(deleteOkReq.session.flash.includes('stay in the order history'), 'API message about kept orders not shown');
     assert(calls.some(c => c.routePath === '/api/products/8' && c.method === 'DELETE'));
     console.log('PASS: product creation, validation, role checks, 303 redirects, and delete success/conflict feedback');
   } finally {

@@ -67,9 +67,9 @@ value="<%= product.Name %>" maxlength="100" required>
 <% if (user && String(user.role || '').toLowerCase() === 'manager') { %>
 <hr class="my-4">
 <h2 class="h5">Delete product</h2>
-<p class="text-muted">This permanently removes the product from the catalog. Products with linked variants cannot be deleted; those dependencies must be resolved first.</p>
+<p class="text-muted">Removes the product and all its sizes and colors from the inventory, including any stock left. Orders already recorded for it (sales, restocks, adjustments) stay in the order history and the sales reports.</p>
 <form action="/products/<%= product.Product_ID %>/delete" method="POST"
-      data-confirm="Permanently delete <%= product.Name %>? This cannot be undone."
+      data-confirm="Delete <%= product.Name %> and all its sizes and colors from the inventory? Any stock left is removed too. Its orders stay in the order history. This can’t be undone."
       data-confirm-button="Delete product"
       data-confirm-style="danger">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
